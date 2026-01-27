@@ -42,6 +42,7 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     print("Press 'q' to quit.")
     
     locked_track_id = None
+    prev_visible = False
     
     # Logging
     debug_log = []
@@ -113,27 +114,39 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
                 pass
         
         # Log state changes
+        # Determine visibility
+        curr_visible = (target_box is not None)
+        
+        # Check for ID change
         if prev_locked_id != locked_track_id:
-            if prev_locked_id is None and locked_track_id is not None:
-                event = "STARTED_TRACKING"
-                log_id = locked_track_id
-            elif prev_locked_id is not None and locked_track_id is not None:
-                event = "SWITCHED_TARGET" # Won't happen with current logic (sticky lock), but good for robustness
-                log_id = locked_track_id
-            # Note: We don't really have a "LOST_TRACKING" event that clears locked_track_id
-            # because we keep the lock even if they disappear.
-            
-            if prev_locked_id is None and locked_track_id is not None:
+            if locked_track_id is not None:
+                # New lock acquired (or switched)
+                debug_log.append({
+                    "timestamp": video_timestamp,
+                    "event": "TRACKING",
+                    "track_id": locked_track_id
+                })
+        
+        # Check for visibility change (only if ID is same and valid)
+        elif locked_track_id is not None:
+            # Re-acquired visibility
+            if curr_visible and not prev_visible:
                  debug_log.append({
                     "timestamp": video_timestamp,
-                    "event": event,
-                    "track_id": log_id
+                    "event": "TRACKING",
+                    "track_id": locked_track_id
+                })
+            # Lost visibility
+            elif not curr_visible and prev_visible:
+                 debug_log.append({
+                    "timestamp": video_timestamp,
+                    "event": "LOST",
+                    "track_id": locked_track_id
                 })
 
-        # Special case: Locked target IS set, but not found in current frame
-        if locked_track_id is not None and target_box is None:
-             # We could log "TEMPORARILY_LOST" here if we wanted verbose logs
-             pass
+        # Update previous state
+        prev_visible = curr_visible
+
 
         # Update Cameraman
         crop_rect = cameraman.update(target_box)
@@ -172,14 +185,6 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
                     text = f"LOST ID: {locked_track_id}"
                     cv2.putText(debug_frame, text, (ui_x, ui_y), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
-                                
-                    # Add log entry for lost frame (optional, might spam)
-                    if frame_count % 30 == 0: # Log once per second roughly
-                         debug_log.append({
-                            "timestamp": video_timestamp,
-                            "event": "TARGET_NOT_VISIBLE",
-                            "track_id": locked_track_id
-                        })
             
             # Write full resolution debug frame to file if tracking is enabled
             if debug_out is not None:
