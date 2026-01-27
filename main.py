@@ -24,16 +24,16 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     cameraman = Cameraman(w, h, zoom_level=zoom_level)
     
     # Output writer (optional, to save the cropped video)
-    # We will save to 'output.mp4'
+    # We will save to 'tmp/output.mp4'
     crop_w = cameraman.crop_w
     crop_h = cameraman.crop_h
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (crop_w, crop_h))
+    out = cv2.VideoWriter('tmp/output.mp4', fourcc, 30.0, (crop_w, crop_h))
 
     # Debug output writer
     debug_out = None
     if debug_tracking:
-        debug_out = cv2.VideoWriter('output_debug.mp4', fourcc, 30.0, (w, h))
+        debug_out = cv2.VideoWriter('tmp/output_debug.mp4', fourcc, 30.0, (w, h))
 
     print(f"Starting tracking on source: {source}")
     print("Press 'q' to quit.")

@@ -6,5 +6,6 @@ __pycache__/
 output_debug.mp4
 *.avi
 output/
+tmp/
 !samples/
 !samples/*.mp4
