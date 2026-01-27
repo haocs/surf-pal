@@ -38,6 +38,8 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     print(f"Starting tracking on source: {source}")
     print("Press 'q' to quit.")
     
+    locked_track_id = None
+    
     while True:
         frame = loader.read()
         if frame is None:
@@ -51,10 +53,14 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
         results = detector.track(frame)
         
         target_box = None
+        current_track_id = None
         
-        # Logic to select primary target
-        # For now: select the person with the largest bounding box area
+        # Parse all detections into a dictionary: track_id -> box
+        # and also find the largest person if we need to fall back
+        detections = {}
         max_area = 0
+        largest_person_id = None
+        largest_person_box = None
         
         if results.boxes is not None:
             for box in results.boxes:
@@ -63,12 +69,36 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
                 x1, y1, x2, y2 = coords
                 area = (x2 - x1) * (y2 - y1)
                 
+                # Get track ID if available
+                track_id = int(box.id[0]) if box.id is not None else None
+                
                 # Check if it's a person (class 0)
                 cls = int(box.cls[0])
                 if cls == 0: 
+                    if track_id is not None:
+                        detections[track_id] = coords
+                        
                     if area > max_area:
                         max_area = area
-                        target_box = coords
+                        largest_person_box = coords
+                        largest_person_id = track_id
+
+        # Logic to select target
+        # 1. Try to find the locked target
+        if locked_track_id is not None and locked_track_id in detections:
+            target_box = detections[locked_track_id]
+            current_track_id = locked_track_id
+        else:
+            # 2. If locked target not found (or no lock yet), pick the largest person
+            if largest_person_box is not None:
+                target_box = largest_person_box
+                current_track_id = largest_person_id
+                locked_track_id = current_track_id # Update lock
+            else:
+                # No person found at all
+                # If we had a lock, we keep it (hoping they reappear), or reset it?
+                # For now, let's keep locked_track_id set, but target_box is None.
+                pass
 
         # Update Cameraman
         crop_rect = cameraman.update(target_box)
@@ -89,9 +119,16 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
             cv2.rectangle(debug_frame, (x, y), (x + crop_w, y + crop_h), (0, 255, 255), 4)
 
             # Draw tracked object outline if debug_tracking is enabled
-            if debug_tracking and target_box is not None:
-                tx1, ty1, tx2, ty2 = map(int, target_box)
-                cv2.rectangle(debug_frame, (tx1, ty1), (tx2, ty2), (0, 255, 0), 2)
+            if debug_tracking:
+                if target_box is not None:
+                    tx1, ty1, tx2, ty2 = map(int, target_box)
+                    cv2.rectangle(debug_frame, (tx1, ty1), (tx2, ty2), (0, 255, 0), 2)
+                    cv2.putText(debug_frame, f"Locked ID: {locked_track_id}", (tx1, ty1 - 10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                elif locked_track_id is not None:
+                    # Message if locked target is lost
+                    cv2.putText(debug_frame, f"Lost ID: {locked_track_id}", (50, 50), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             
             # Write full resolution debug frame to file if tracking is enabled
             if debug_out is not None:
