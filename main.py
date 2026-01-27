@@ -5,6 +5,9 @@ from core.video_loader import VideoLoader
 from core.detector import Detector
 from core.cameraman import Cameraman
 
+import json
+import datetime
+
 def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     # Initialize components
     loader = VideoLoader(source).start()
@@ -40,6 +43,12 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     
     locked_track_id = None
     
+    # Logging
+    debug_log = []
+    video_start_time = time.time() # This is wall clock, but for video timestamp we might just use frame count / fps
+    frame_count = 0
+    fps = 30.0 # Assumption, or get from loader if possible
+    
     while True:
         frame = loader.read()
         if frame is None:
@@ -48,6 +57,9 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
             time.sleep(0.01)
             continue
             
+        frame_count += 1
+        video_timestamp = frame_count / fps
+        
         # Detect & Track
         # Using persist=True for tracking
         results = detector.track(frame)
@@ -84,6 +96,8 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
                         largest_person_id = track_id
 
         # Logic to select target
+        prev_locked_id = locked_track_id
+        
         # 1. Try to find the locked target
         if locked_track_id is not None and locked_track_id in detections:
             target_box = detections[locked_track_id]
@@ -96,9 +110,30 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
                 locked_track_id = current_track_id # Update lock
             else:
                 # No person found at all
-                # If we had a lock, we keep it (hoping they reappear), or reset it?
-                # For now, let's keep locked_track_id set, but target_box is None.
                 pass
+        
+        # Log state changes
+        if prev_locked_id != locked_track_id:
+            if prev_locked_id is None and locked_track_id is not None:
+                event = "STARTED_TRACKING"
+                log_id = locked_track_id
+            elif prev_locked_id is not None and locked_track_id is not None:
+                event = "SWITCHED_TARGET" # Won't happen with current logic (sticky lock), but good for robustness
+                log_id = locked_track_id
+            # Note: We don't really have a "LOST_TRACKING" event that clears locked_track_id
+            # because we keep the lock even if they disappear.
+            
+            if prev_locked_id is None and locked_track_id is not None:
+                 debug_log.append({
+                    "timestamp": video_timestamp,
+                    "event": event,
+                    "track_id": log_id
+                })
+
+        # Special case: Locked target IS set, but not found in current frame
+        if locked_track_id is not None and target_box is None:
+             # We could log "TEMPORARILY_LOST" here if we wanted verbose logs
+             pass
 
         # Update Cameraman
         crop_rect = cameraman.update(target_box)
@@ -120,15 +155,31 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
 
             # Draw tracked object outline if debug_tracking is enabled
             if debug_tracking:
+                # Bottom-left UI coordinates
+                ui_x = 30
+                ui_y = h - 30
+                
                 if target_box is not None:
                     tx1, ty1, tx2, ty2 = map(int, target_box)
                     cv2.rectangle(debug_frame, (tx1, ty1), (tx2, ty2), (0, 255, 0), 2)
-                    cv2.putText(debug_frame, f"Locked ID: {locked_track_id}", (tx1, ty1 - 10), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                    
+                    # UI Info
+                    text = f"TRACKING ID: {locked_track_id}"
+                    cv2.putText(debug_frame, text, (ui_x, ui_y), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
                 elif locked_track_id is not None:
                     # Message if locked target is lost
-                    cv2.putText(debug_frame, f"Lost ID: {locked_track_id}", (50, 50), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    text = f"LOST ID: {locked_track_id}"
+                    cv2.putText(debug_frame, text, (ui_x, ui_y), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+                                
+                    # Add log entry for lost frame (optional, might spam)
+                    if frame_count % 30 == 0: # Log once per second roughly
+                         debug_log.append({
+                            "timestamp": video_timestamp,
+                            "event": "TARGET_NOT_VISIBLE",
+                            "track_id": locked_track_id
+                        })
             
             # Write full resolution debug frame to file if tracking is enabled
             if debug_out is not None:
@@ -154,6 +205,12 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     if debug_out is not None:
         debug_out.release()
     cv2.destroyAllWindows()
+    
+    # Save log
+    if debug_tracking:
+        with open('tmp/debug_log.json', 'w') as f:
+            json.dump(debug_log, f, indent=2)
+        print("Debug log saved to tmp/debug_log.json")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
