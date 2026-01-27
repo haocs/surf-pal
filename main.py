@@ -5,7 +5,7 @@ from core.video_loader import VideoLoader
 from core.detector import Detector
 from core.cameraman import Cameraman
 
-def main(source, zoom_level=2.0, show_debug=True):
+def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     # Initialize components
     loader = VideoLoader(source).start()
     detector = Detector('yolov8n.pt') 
@@ -82,6 +82,11 @@ def main(source, zoom_level=2.0, show_debug=True):
             
             # Draw the crop window on the main frame
             cv2.rectangle(debug_frame, (x, y), (x + crop_w, y + crop_h), (0, 255, 255), 4)
+
+            # Draw tracked object outline if debug_tracking is enabled
+            if debug_tracking and target_box is not None:
+                tx1, ty1, tx2, ty2 = map(int, target_box)
+                cv2.rectangle(debug_frame, (tx1, ty1), (tx2, ty2), (0, 255, 0), 2)
             
             # Resize debug frame to fit screen if 4K
             display_h, display_w = debug_frame.shape[:2]
@@ -106,6 +111,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=str, default='0', help='Video source (0 for webcam, or path to file)')
     parser.add_argument('--zoom', type=float, default=2.0, help='Zoom level (e.g. 2.0 for 2x zoom)')
+    parser.add_argument('--debug', action='store_true', help='Draw outline around tracked object')
     args = parser.parse_args()
     
     # Handle numeric source for webcam
@@ -113,4 +119,4 @@ if __name__ == "__main__":
     if source.isdigit():
         source = int(source)
         
-    main(source, args.zoom)
+    main(source, args.zoom, debug_tracking=args.debug)
