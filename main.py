@@ -58,7 +58,7 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
             continue
             
         frame_count += 1
-        video_timestamp = frame_count / fps
+        video_timestamp = (frame_count / fps) * 1000 # Milliseconds
         
         # Detect & Track
         # Using persist=True for tracking
