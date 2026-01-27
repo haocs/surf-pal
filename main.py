@@ -30,6 +30,11 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (crop_w, crop_h))
 
+    # Debug output writer
+    debug_out = None
+    if debug_tracking:
+        debug_out = cv2.VideoWriter('output_debug.mp4', fourcc, 30.0, (w, h))
+
     print(f"Starting tracking on source: {source}")
     print("Press 'q' to quit.")
     
@@ -88,6 +93,10 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
                 tx1, ty1, tx2, ty2 = map(int, target_box)
                 cv2.rectangle(debug_frame, (tx1, ty1), (tx2, ty2), (0, 255, 0), 2)
             
+            # Write full resolution debug frame to file if tracking is enabled
+            if debug_out is not None:
+                debug_out.write(debug_frame)
+            
             # Resize debug frame to fit screen if 4K
             display_h, display_w = debug_frame.shape[:2]
             if display_w > 1920:
@@ -105,6 +114,8 @@ def main(source, zoom_level=2.0, show_debug=True, debug_tracking=False):
             
     loader.stop()
     out.release()
+    if debug_out is not None:
+        debug_out.release()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
