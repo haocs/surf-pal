@@ -6,6 +6,8 @@ struct ContentView: View {
     @StateObject private var tracker = Tracker()
     @StateObject private var virtualCameraman = VirtualCameraman()
     
+    @State private var isDebugMode = false
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -13,13 +15,13 @@ struct ContentView: View {
                 ZStack {
                     if let frame = cameraManager.currentFrame {
                         FrameView(pixelBuffer: frame)
-                            .onChange(of: frame) { oldFrame, newFrame in
+                            .onChange(of: frame, perform: { newFrame in
                                 if tracker.isTracking {
                                     tracker.updateTracking(with: newFrame)
                                 } else {
                                     detector.processFrame(newFrame)
                                 }
-                            }
+                            })
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     } else {
@@ -58,13 +60,44 @@ struct ContentView: View {
                 // Apply the digital pan and zoom
                 .scaleEffect(virtualCameraman.scale)
                 .offset(x: virtualCameraman.offsetX, y: virtualCameraman.offsetY)
-                // Update smoothing engine whenever the tracker box updates
-                .onChange(of: tracker.trackedBox?.id) { oldId, newId in
-                    virtualCameraman.update(targetBox: tracker.trackedBox, screenSize: geometry.size)
-                }
                 
                 // 2. Static UI Controls Overlay
                 VStack {
+                    // Top Bar
+                    HStack {
+                        Spacer()
+                        Toggle("Debug", isOn: $isDebugMode)
+                            .toggleStyle(SwitchToggleStyle(tint: .yellow))
+                            .labelsHidden()
+                            .padding()
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(10)
+                            .padding()
+                            .onChange(of: isDebugMode, perform: { newVal in
+                                cameraManager.isDebugModeEnabled = newVal
+                            })
+                    }
+                    
+                    if isDebugMode && tracker.isTracking {
+                        VStack(alignment: .leading) {
+                            Text("ID: \(tracker.trackID)")
+                            Text("STATE: \(tracker.currentActivity.rawValue)")
+                            Text("ZOOM: \(String(format: "%.2fx", virtualCameraman.scale))")
+                            Divider().background(Color.white)
+                            Text("SPD: \(String(format: "%.1f", tracker.classifierSignals.totalSpeed))")
+                            Text("V-SPD: \(String(format: "%.1f", tracker.classifierSignals.vertSpeed))")
+                            Text("VAR: \(String(format: "%.3f", tracker.classifierSignals.areaCV))")
+                            Text("AR: \(String(format: "%.2f", tracker.classifierSignals.avgAR))")
+                        }
+                        .font(.caption.monospaced())
+                        .foregroundColor(.yellow)
+                        .padding()
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                    }
+                    
                     if !tracker.isTracking {
                         Text("Tap a person to start tracking")
                             .padding()
@@ -78,7 +111,6 @@ struct ContentView: View {
                     
                     // Bottom Control Bar
                     HStack(spacing: 40) {
-                        // Flip Camera Button
                         Button(action: {
                             cameraManager.flipCamera()
                         }) {
@@ -90,7 +122,6 @@ struct ContentView: View {
                                 .clipShape(Circle())
                         }
                         
-                        // Record Button
                         Button(action: {
                             cameraManager.toggleRecording()
                         }) {
@@ -111,7 +142,6 @@ struct ContentView: View {
                             }
                         }
                         
-                        // Action Button (Stop Tracking)
                         if tracker.isTracking {
                             Button(action: {
                                 tracker.stopTracking()
@@ -125,7 +155,6 @@ struct ContentView: View {
                                     .clipShape(Circle())
                             }
                         } else {
-                            // Empty space block to keep record button centered
                             Color.clear.frame(width: 50, height: 50)
                         }
                     }
@@ -133,6 +162,17 @@ struct ContentView: View {
                 }
             }
             .ignoresSafeArea()
+            // Route state from Tracker/VC down to CameraManager whenever it changes
+            // so that CameraManager has the latest frame values to burn into the video
+            .onChange(of: tracker.trackedBox?.id, perform: { newId in
+                virtualCameraman.update(targetBox: tracker.trackedBox, screenSize: geometry.size)
+                
+                cameraManager.currentTrackedBox = tracker.trackedBox
+                cameraManager.currentTrackID = tracker.trackID
+                cameraManager.currentActivity = tracker.currentActivity
+                cameraManager.currentSignals = tracker.classifierSignals
+                cameraManager.currentZoomScale = virtualCameraman.scale
+            })
         }
         .onAppear {
             cameraManager.start()

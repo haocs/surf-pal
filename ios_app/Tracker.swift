@@ -5,87 +5,89 @@ import Combine
 // Re-using the BoundingBox from Detector.swift
 
 class Tracker: ObservableObject {
-    @Published var trackedBox: BoundingBox?
     @Published var isTracking = false
+    @Published var trackedBox: BoundingBox?
+    
+    // Debug info
+    @Published var trackID: String = ""
+    @Published var currentActivity: Activity = .unknown
+    @Published var classifierSignals = ClassifierSignals()
     
     private var sequenceRequestHandler = VNSequenceRequestHandler()
-    private var trackRequest: VNTrackObjectRequest?
+    private var lastObservation: VNDetectedObjectObservation?
+    private let activityClassifier = ActivityClassifier()
+    private var frameSize = CGSize(width: 1, height: 1)
     
-    func startTracking(targetRect: CGRect, in frame: CVPixelBuffer) {
-        // Create an observation from the user-selected rect
-        // Remember to flip the Y coordinate back to Vision's coordinate space (origin bottom-left)
-        let visionY = 1.0 - targetRect.origin.y - targetRect.size.height
+    func startTracking(targetRect: CGRect, in pixelBuffer: CVPixelBuffer) {
+        self.isTracking = true
+        // Assign a pseudo-random ID for this tracking session
+        self.trackID = String(format: "ID:%04d", Int.random(in: 1000...9999))
+        self.activityClassifier.reset()
+        
+        let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        self.frameSize = CGSize(width: width, height: height)
+        
+        // Create an observation from the normalized rect
+        // the Y coordinates in Vision are inverted (0 is bottom)
         let visionRect = CGRect(x: targetRect.origin.x,
-                                y: visionY,
-                                width: targetRect.size.width,
-                                height: targetRect.size.height)
+                                y: 1 - targetRect.origin.y - targetRect.height,
+                                width: targetRect.width,
+                                height: targetRect.height)
         
-        let observation = VNDetectedObjectObservation(boundingBox: visionRect)
+        lastObservation = VNDetectedObjectObservation(boundingBox: visionRect)
         
-        self.trackRequest = VNTrackObjectRequest(detectedObjectObservation: observation) { [weak self] request, error in
-            self?.handleTrackResult(request: request, error: error)
-        }
-        // Force high accuracy tracking (slower but better for our use case)
-        self.trackRequest?.trackingLevel = .accurate
-        
-        do {
-            try sequenceRequestHandler.perform([self.trackRequest!], on: frame, orientation: .up)
-            
-            DispatchQueue.main.async {
-                self.isTracking = true
-            }
-        } catch {
-            print("Failed to start tracking sequence: \(error)")
-        }
-    }
-    
-    func updateTracking(with frame: CVPixelBuffer) {
-        guard isTracking, let request = trackRequest else { return }
-        
-        do {
-            try sequenceRequestHandler.perform([request], on: frame, orientation: .up)
-        } catch {
-            print("Tracking update failed: \(error)")
-            stopTracking()
-        }
+        // Create initial box and perform one round of classification
+        self.trackedBox = BoundingBox(rect: targetRect, confidence: 1.0)
+        self.currentActivity = activityClassifier.update(targetRect: targetRect, frameSize: self.frameSize)
+        self.classifierSignals = activityClassifier.signals
     }
     
     func stopTracking() {
-        DispatchQueue.main.async {
-            self.isTracking = false
-            self.trackedBox = nil
-            self.trackRequest = nil
-        }
+        self.isTracking = false
+        self.trackedBox = nil
+        self.trackID = ""
+        self.lastObservation = nil
+        self.sequenceRequestHandler = VNSequenceRequestHandler()
+        self.activityClassifier.reset()
+        self.currentActivity = .unknown
     }
     
-    private func handleTrackResult(request: VNRequest, error: Error?) {
-        guard let results = request.results as? [VNObservation],
-              let observation = results.first as? VNDetectedObjectObservation else {
-            stopTracking()
-            return
-        }
+    func updateTracking(with pixelBuffer: CVPixelBuffer) {
+        guard let observation = lastObservation else { return }
         
-        // If confidence drops too low, we lost the target
-        if observation.confidence < 0.3 {
-            stopTracking()
-            return
-        }
-        
-        // Convert back to SwiftUI coordinate space (top-left origin)
-        let flippedY = 1.0 - observation.boundingBox.origin.y - observation.boundingBox.size.height
-        let normalizedRect = CGRect(x: observation.boundingBox.origin.x,
-                                    y: flippedY,
-                                    width: observation.boundingBox.size.width,
-                                    height: observation.boundingBox.size.height)
-        
-        let box = BoundingBox(rect: normalizedRect, confidence: observation.confidence)
-        
-        DispatchQueue.main.async {
-            self.trackedBox = box
+        let request = VNTrackObjectRequest(detectedObjectObservation: observation) { [weak self] request, error in
+            guard let self = self else { return }
             
-            // Re-create the request for the next frame using the new observation
-            self.trackRequest = VNTrackObjectRequest(detectedObjectObservation: observation, completionHandler: self.handleTrackResult)
-            self.trackRequest?.trackingLevel = .accurate
+            if let result = request.results?.first as? VNDetectedObjectObservation {
+                self.lastObservation = result
+                
+                // Convert back from Vision coordinates (Y inverted)
+                let rect = result.boundingBox
+                let normalizedRect = CGRect(x: rect.origin.x,
+                                            y: 1 - rect.origin.y - rect.height,
+                                            width: rect.width,
+                                            height: rect.height)
+                
+                DispatchQueue.main.async {
+                    self.trackedBox = BoundingBox(rect: normalizedRect, confidence: result.confidence)
+                    self.currentActivity = self.activityClassifier.update(targetRect: normalizedRect, frameSize: self.frameSize)
+                    self.classifierSignals = self.activityClassifier.signals
+                }
+            } else {
+                // Tracking lost
+                DispatchQueue.main.async {
+                    self.stopTracking()
+                }
+            }
+        }
+        
+        // request.trackingLevel = .accurate // .fast or .accurate
+        
+        do {
+            try sequenceRequestHandler.perform([request], on: pixelBuffer)
+        } catch {
+            print("Tracking failed: \(error)")
         }
     }
 }
