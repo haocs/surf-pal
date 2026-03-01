@@ -48,6 +48,7 @@ struct ContentView: View {
                                 color: .red,
                                 label: "Person (\(String(format: "%.2f", box.confidence)))"
                             )
+                            .contentShape(Rectangle())
                             .onTapGesture {
                                 // User selected a target to track
                                 if let currentFrame = cameraManager.currentFrame {
@@ -172,6 +173,9 @@ struct ContentView: View {
                 cameraManager.currentActivity = tracker.currentActivity
                 cameraManager.currentSignals = tracker.classifierSignals
                 cameraManager.currentZoomScale = virtualCameraman.scale
+            })
+            .onChange(of: detector.detectedBoxes.first?.id, perform: { _ in
+                cameraManager.currentDetectedBoxes = detector.detectedBoxes
             })
         }
         .onAppear {

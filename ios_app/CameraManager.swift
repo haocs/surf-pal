@@ -11,6 +11,7 @@ class CameraManager: NSObject, ObservableObject {
     // Configurable state
     var isDebugModeEnabled: Bool = false
     var currentTrackedBox: BoundingBox? = nil
+    var currentDetectedBoxes: [BoundingBox] = []
     var currentTrackID: String = ""
     var currentActivity: Activity = .unknown
     var currentZoomScale: CGFloat = 1.0
@@ -32,7 +33,54 @@ class CameraManager: NSObject, ObservableObject {
     
     override init() {
         super.init()
+        setupDeviceOrientationObserver()
         setupCamera()
+    }
+    
+    private func setupDeviceOrientationObserver() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleOrientationChange), name: UIDevice.orientationDidChangeNotification, object: nil)
+    }
+    
+    @objc private func handleOrientationChange() {
+        sessionQueue.async {
+            self.updateVideoOrientation()
+        }
+    }
+    
+    private func updateVideoOrientation() {
+        guard let connection = videoOutput.connection(with: .video) else { return }
+        let orientation = UIDevice.current.orientation
+        
+        // Map UIDeviceOrientation to AVCaptureVideoOrientation
+        // Ignore flat/unknown orientations to prevent camera flipping on table
+        let videoOrientation: AVCaptureVideoOrientation
+        let rotationAngle: CGFloat
+        
+        switch orientation {
+        case .portrait:
+            videoOrientation = .portrait
+            rotationAngle = 90
+        case .portraitUpsideDown:
+            videoOrientation = .portraitUpsideDown
+            rotationAngle = 270
+        case .landscapeLeft:
+            videoOrientation = .landscapeRight // Phone rotated left -> Camera is on the right
+            rotationAngle = 0
+        case .landscapeRight:
+            videoOrientation = .landscapeLeft // Phone rotated right -> Camera is on the left
+            rotationAngle = 180
+        default:
+            return
+        }
+        
+        if connection.isVideoOrientationSupported {
+            connection.videoOrientation = videoOrientation
+        }
+        if #available(iOS 17.0, macOS 14.0, *) {
+            if connection.isVideoRotationAngleSupported(rotationAngle) {
+                connection.videoRotationAngle = rotationAngle
+            }
+        }
     }
     
     private func setupCamera() {
@@ -48,16 +96,8 @@ class CameraManager: NSObject, ObservableObject {
             if self.captureSession.canAddOutput(self.videoOutput) {
                 self.captureSession.addOutput(self.videoOutput)
             }
-            // Fix orientation for pixel buffer
-            if let connection = self.videoOutput.connection(with: .video) {
-                if #available(iOS 17.0, macOS 14.0, *) {
-                    connection.videoRotationAngle = 90
-                } else {
-                    connection.videoOrientation = .portrait
-                }
-            }
-            
             self.captureSession.commitConfiguration()
+            self.updateVideoOrientation()
         }
     }
     
@@ -83,14 +123,8 @@ class CameraManager: NSObject, ObservableObject {
             self.captureSession.beginConfiguration()
             self.currentCameraPosition = self.currentCameraPosition == .back ? .front : .back
             self.addInput(for: self.currentCameraPosition)
-            if let connection = self.videoOutput.connection(with: .video) {
-                if #available(iOS 17.0, macOS 14.0, *) {
-                    connection.videoRotationAngle = 90
-                } else {
-                    connection.videoOrientation = .portrait
-                }
-            }
             self.captureSession.commitConfiguration()
+            self.updateVideoOrientation()
         }
     }
     
@@ -130,11 +164,17 @@ class CameraManager: NSObject, ObservableObject {
         do {
             assetWriter = try AVAssetWriter(outputURL: fileUrl, fileType: .mp4)
             
-            // Standard HD settings. You can read these dynamically from video settings if preferred.
+            // Determine dimensions based on current device orientation
+            let orientation = UIDevice.current.orientation
+            let isLandscape = orientation == .landscapeLeft || orientation == .landscapeRight
+            
+            let width = isLandscape ? 1920 : 1080
+            let height = isLandscape ? 1080 : 1920
+            
             let videoSettings: [String: Any] = [
                 AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: 1080,
-                AVVideoHeightKey: 1920
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height
             ]
             
             videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
@@ -142,8 +182,8 @@ class CameraManager: NSObject, ObservableObject {
             
             let sourcePixelBufferAttributes: [String: Any] = [
                 kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
-                kCVPixelBufferWidthKey as String: 1080,
-                kCVPixelBufferHeightKey as String: 1920
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height
             ]
             
             pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -218,6 +258,7 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
                 if let debugBuffer = HUDOverlay.drawDebugHUD(
                     on: pixelBuffer,
                     trackedBox: currentTrackedBox,
+                    detectedBoxes: currentDetectedBoxes,
                     trackID: currentTrackID,
                     activity: currentActivity,
                     zoomScale: currentZoomScale,

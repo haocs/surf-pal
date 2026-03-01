@@ -8,6 +8,7 @@ class HUDOverlay {
     // Draw the debug info onto a copy of the pixel buffer
     static func drawDebugHUD(on pixelBuffer: CVPixelBuffer,
                              trackedBox: BoundingBox?,
+                             detectedBoxes: [BoundingBox],
                              trackID: String,
                              activity: Activity,
                              zoomScale: CGFloat,
@@ -34,14 +35,14 @@ class HUDOverlay {
             return outputBuffer
         }
         
-        // Setup drawing config
-        context.setLineWidth(4.0)
-        let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 24),
-            .foregroundColor: UIColor.green
-        ]
+        // UIGraphicsPushContext allows us to use high-level UIKit drawing (like NSString.draw)
+        // directly onto the CVPixelBuffer context without worrying about CoreText mirroring issues.
+        UIGraphicsPushContext(context)
+        defer { UIGraphicsPopContext() }
         
-        // Draw the target bounding box
+        context.setLineWidth(4.0)
+        
+        // Draw the target bounding box (Green) OR detected boxes (Red)
         if let box = trackedBox {
             let rect = CGRect(x: box.rect.origin.x * CGFloat(width),
                               y: box.rect.origin.y * CGFloat(height),
@@ -52,11 +53,34 @@ class HUDOverlay {
             context.stroke(rect)
             
             // Draw Target ID above the box
+            let textAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.boldSystemFont(ofSize: 24),
+                .foregroundColor: UIColor.green
+            ]
             let idString = NSAttributedString(string: trackID, attributes: textAttributes)
-            drawText(context: context, text: idString, at: CGPoint(x: rect.origin.x, y: max(0, rect.origin.y - 30)))
+            drawText(text: idString, at: CGPoint(x: rect.origin.x, y: max(0, rect.origin.y - 30)))
+            
+        } else {
+            // Not tracking, draw DETECTED boxes in Red
+            context.setStrokeColor(UIColor.red.cgColor)
+            let textAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.boldSystemFont(ofSize: 24),
+                .foregroundColor: UIColor.red
+            ]
+            
+            for box in detectedBoxes {
+                let rect = CGRect(x: box.rect.origin.x * CGFloat(width),
+                                  y: box.rect.origin.y * CGFloat(height),
+                                  width: box.rect.width * CGFloat(width),
+                                  height: box.rect.height * CGFloat(height))
+                context.stroke(rect)
+                
+                let confString = NSAttributedString(string: String(format: "Person %.2f", box.confidence), attributes: textAttributes)
+                drawText(text: confString, at: CGPoint(x: rect.origin.x, y: max(0, rect.origin.y - 30)))
+            }
         }
         
-        // Draw the top-left HUD
+        // Draw the top-left HUD if we are tracking (or even if we are not, show zero'd out states)
         let hudText = """
         STATE: \(activity.rawValue)
         ZOOM: \(String(format: "%.2fx", zoomScale))
@@ -74,33 +98,21 @@ class HUDOverlay {
         ]
         
         let hudString = NSAttributedString(string: hudText, attributes: hudAttributes)
-        drawText(context: context, text: hudString, at: CGPoint(x: 20, y: 50))
+        drawText(text: hudString, at: CGPoint(x: 20, y: 50))
         
         return outputBuffer
     }
     
-    private static func drawText(context: CGContext, text: NSAttributedString, at point: CGPoint) {
-        // CoreGraphics has origin at bottom-left, so we must flip the text matrix
-        context.saveGState()
-        
-        context.translateBy(x: 0, y: CGFloat(context.height))
-        context.scaleBy(x: 1.0, y: -1.0)
-        
-        let framesetter = CTFramesetterCreateWithAttributedString(text)
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRangeMake(0,0), nil, CGSize(width: 800, height: 800), nil)
-        
-        // Since we flipped the context, we must also flip the y coordinate
-        let textRect = CGRect(x: point.x, y: CGFloat(context.height) - point.y - size.height, width: size.width, height: size.height)
+    private static func drawText(text: NSAttributedString, at point: CGPoint) {
+        let size = text.size()
+        let textRect = CGRect(origin: point, size: size)
         
         // Draw black background for readability
-        context.setFillColor(UIColor.black.withAlphaComponent(0.6).cgColor)
-        context.fill(textRect.insetBy(dx: -5, dy: -5))
+        let ctx = UIGraphicsGetCurrentContext()
+        ctx?.setFillColor(UIColor.black.withAlphaComponent(0.6).cgColor)
+        ctx?.fill(textRect.insetBy(dx: -5, dy: -5))
         
-        let path = CGPath(rect: textRect, transform: nil)
-        let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, 0), path, nil)
-        
-        CTFrameDraw(frame, context)
-        context.restoreGState()
+        text.draw(at: point)
     }
 }
 
