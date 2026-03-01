@@ -12,24 +12,22 @@ This directory contains the Swift source code and Apple CoreML model to build th
 4. Choose a location to save your project and click Create.
 
 ## Step 2: Import the Source Files
-1. Open a Finder window to this `ios_app` directory.
+1. Open a Finder window to the `ios_app/src` directory.
 2. In Xcode, delete the default `ContentView.swift` file from the Project Navigator (left sidebar).
-3. Drag the following files from Finder into your Xcode Project Navigator:
-   - `CameraManager.swift`
-   - `Detector.swift`
-   - `Tracker.swift`
-   - `VirtualCameraman.swift`
-   - `ContentView.swift`
+3. Drag all `.swift` files from the `src/` directory into your Xcode Project Navigator.
 4. When the dialog appears, make sure **Copy items if needed** is checked, and click Finish.
 
 ## Step 3: Import the Machine Learning Model
 1. If you haven't already, generate the Apple CoreML model from the PyTorch weights:
-   - Open a terminal and navigate to the `models/` folder in this repository.
-   - Run `python3 export_coreml.py`.
-   - This will download the YOLOv8 weights and generate a `yolov8n.mlpackage` folder.
-2. Locate the generated `yolov8n.mlpackage` file inside the `models/` directory.
-3. Drag it into the Xcode Project Navigator, just like the Swift files. Make sure **Copy items if needed** is checked.
-4. **CRITICAL STEP:** Click on `yolov8n.mlpackage` in the Xcode Project Navigator. Then look at the right sidebar (File Inspector). Under the **Target Membership** section, make sure the checkbox next to your app name (`SurfPal`) is **CHECKED**. Xcode will generate the necessary Swift code in the background.
+   - Open a terminal and navigate to the root of this repository.
+   - Run `python3 models/export_coreml.py`.
+   - This will generate a `yolov8n.mlpackage` folder in the root.
+2. Drag `yolov8n.mlpackage` into the Xcode Project Navigator. Make sure **Copy items if needed** is checked.
+3. **CRITICAL STEP:** Click on `yolov8n.mlpackage` in the Project Navigator. Under **Target Membership**, make sure the checkbox next to your app name is **CHECKED**.
+
+> [!NOTE]
+> There is a file in `ios_app/generated/yolov8n.swift`. This is **ONLY** for local terminal testing/type-checking (`swiftc`).
+> **DO NOT** add this file to your Xcode project, or you will get a "Redeclaration of yolov8n" error, as Xcode generates this class automatically from the `.mlpackage`.
 
 ## Step 4: Configure the Info.plist Permissions
 Because this app uses the camera to track and the photo library to save videos, you must ask the user for permission. If you don't do this, the app will instantly crash on launch.
