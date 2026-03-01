@@ -33,6 +33,7 @@ class CameraManager: NSObject, ObservableObject {
     
     override init() {
         super.init()
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         setupDeviceOrientationObserver()
         setupCamera()
     }
@@ -51,8 +52,6 @@ class CameraManager: NSObject, ObservableObject {
         guard let connection = videoOutput.connection(with: .video) else { return }
         let orientation = UIDevice.current.orientation
         
-        // Map UIDeviceOrientation to AVCaptureVideoOrientation
-        // Ignore flat/unknown orientations to prevent camera flipping on table
         let videoOrientation: AVCaptureVideoOrientation
         let rotationAngle: CGFloat
         
@@ -64,12 +63,14 @@ class CameraManager: NSObject, ObservableObject {
             videoOrientation = .portraitUpsideDown
             rotationAngle = 270
         case .landscapeLeft:
-            videoOrientation = .landscapeRight // Phone rotated left -> Camera is on the right
+            videoOrientation = .landscapeRight // Phone rotated left (side button up) -> Video Right
             rotationAngle = 0
         case .landscapeRight:
-            videoOrientation = .landscapeLeft // Phone rotated right -> Camera is on the left
+            videoOrientation = .landscapeLeft // Phone rotated right (side button down) -> Video Left
             rotationAngle = 180
-        default:
+        case .faceUp, .faceDown, .unknown:
+            return 
+        @unknown default:
             return
         }
         

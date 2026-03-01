@@ -64,20 +64,16 @@ struct ContentView: View {
                 
                 // 2. Static UI Controls Overlay
                 VStack {
-                    // Top Bar
-                    HStack {
-                        Spacer()
-                        Toggle("Debug", isOn: $isDebugMode)
-                            .toggleStyle(SwitchToggleStyle(tint: .yellow))
-                            .labelsHidden()
+                    if !tracker.isTracking {
+                        Text("Tap a person to start tracking")
                             .padding()
                             .background(Color.black.opacity(0.6))
+                            .foregroundColor(.white)
                             .cornerRadius(10)
-                            .padding()
-                            .onChange(of: isDebugMode, perform: { newVal in
-                                cameraManager.isDebugModeEnabled = newVal
-                            })
+                            .padding(.top, geometry.safeAreaInsets.top + 20)
                     }
+                    
+                    Spacer()
                     
                     if isDebugMode && tracker.isTracking {
                         VStack(alignment: .leading) {
@@ -99,16 +95,27 @@ struct ContentView: View {
                         .padding(.horizontal)
                     }
                     
-                    if !tracker.isTracking {
-                        Text("Tap a person to start tracking")
-                            .padding()
-                            .background(Color.black.opacity(0.6))
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                            .padding(.top, 50)
+                    // Middle-Bottom: Debug Toggle
+                    HStack {
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Debug Mode")
+                                .font(.caption2)
+                                .foregroundColor(.yellow.opacity(0.8))
+                                .bold()
+                            Toggle("", isOn: $isDebugMode)
+                                .toggleStyle(SwitchToggleStyle(tint: .yellow))
+                                .labelsHidden()
+                        }
+                        .padding(8)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                        .padding(.trailing)
+                        .onChange(of: isDebugMode, perform: { newVal in
+                            cameraManager.isDebugModeEnabled = newVal
+                        })
                     }
-                    
-                    Spacer()
+                    .padding(.bottom, 10)
                     
                     // Bottom Control Bar
                     HStack(spacing: 40) {
@@ -176,6 +183,11 @@ struct ContentView: View {
             })
             .onChange(of: detector.detectedBoxes.first?.id, perform: { _ in
                 cameraManager.currentDetectedBoxes = detector.detectedBoxes
+            })
+            .onChange(of: geometry.size, perform: { newSize in
+                if tracker.isTracking {
+                    virtualCameraman.update(targetBox: tracker.trackedBox, screenSize: newSize)
+                }
             })
         }
         .onAppear {
