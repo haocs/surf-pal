@@ -14,56 +14,72 @@ struct ContentView: View {
                 // 1. Scalable Background (Video + Boxes)
                 ZStack {
                     if let frame = cameraManager.currentFrame {
-                        FrameView(pixelBuffer: frame)
-                            .onChange(of: frame, perform: { newFrame in
-                                if tracker.isTracking {
-                                    tracker.updateTracking(with: newFrame)
-                                } else {
-                                    detector.processFrame(newFrame)
+                        let frameW = CGFloat(CVPixelBufferGetWidth(frame))
+                        let frameH = CGFloat(CVPixelBufferGetHeight(frame))
+                        
+                        // Creates a container that maintains the exact video aspect ratio
+                        // but perfectly fills the device screen layout
+                        Color.clear
+                            .aspectRatio(frameW / frameH, contentMode: .fill)
+                            .overlay(
+                                GeometryReader { innerGeo in
+                                    ZStack {
+                                        FrameView(pixelBuffer: frame)
+                                            .frame(width: innerGeo.size.width, height: innerGeo.size.height)
+                                            .onChange(of: frame, perform: { newFrame in
+                                                if tracker.isTracking {
+                                                    tracker.updateTracking(with: newFrame)
+                                                } else {
+                                                    detector.processFrame(newFrame)
+                                                }
+                                                
+                                                // UPDATE METRICS EVERY FRAME FOR RECORDING
+                                                cameraManager.currentTrackedBox = tracker.trackedBox
+                                                cameraManager.currentDetectedBoxes = detector.detectedBoxes
+                                                cameraManager.currentTrackID = tracker.trackID
+                                                cameraManager.currentActivity = tracker.currentActivity
+                                                cameraManager.currentSignals = tracker.classifierSignals
+                                                cameraManager.currentZoomScale = virtualCameraman.scale
+                                            })
+                                        
+                                        // Bounding Boxes Layer
+                                        // Uses the perfectly aligned inner geometry size
+                                        if tracker.isTracking {
+                                            if let box = tracker.trackedBox {
+                                                BoundingBoxView(
+                                                    normalizedRect: box.rect,
+                                                    screenSize: innerGeo.size,
+                                                    color: .green,
+                                                    label: "TRACKING (\(String(format: "%.2f", box.confidence)))"
+                                                )
+                                            }
+                                        } else {
+                                            ForEach(detector.detectedBoxes, id: \.id) { box in
+                                                BoundingBoxView(
+                                                    normalizedRect: box.rect,
+                                                    screenSize: innerGeo.size,
+                                                    color: .red,
+                                                    label: "Person (\(String(format: "%.2f", box.confidence)))"
+                                                )
+                                                .contentShape(Rectangle())
+                                                .onTapGesture {
+                                                    // User selected a target to track
+                                                    if let currentFrame = cameraManager.currentFrame {
+                                                        tracker.startTracking(targetRect: box.rect, in: currentFrame)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                                
-                                // UPDATE METRICS EVERY FRAME FOR RECORDING
-                                cameraManager.currentTrackedBox = tracker.trackedBox
-                                cameraManager.currentDetectedBoxes = detector.detectedBoxes
-                                cameraManager.currentTrackID = tracker.trackID
-                                cameraManager.currentActivity = tracker.currentActivity
-                                cameraManager.currentSignals = tracker.classifierSignals
-                                cameraManager.currentZoomScale = virtualCameraman.scale
-                            })
+                            )
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
+                            
                     } else {
                         Color.black
                         Text("Initializing Camera...")
                             .foregroundColor(.white)
-                    }
-                    
-                    // Bounding Boxes Layer
-                    if tracker.isTracking {
-                        if let box = tracker.trackedBox {
-                            BoundingBoxView(
-                                normalizedRect: box.rect,
-                                screenSize: geometry.size,
-                                color: .green,
-                                label: "TRACKING (\(String(format: "%.2f", box.confidence)))"
-                            )
-                        }
-                    } else {
-                        ForEach(detector.detectedBoxes, id: \.id) { box in
-                            BoundingBoxView(
-                                normalizedRect: box.rect,
-                                screenSize: geometry.size,
-                                color: .red,
-                                label: "Person (\(String(format: "%.2f", box.confidence)))"
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                // User selected a target to track
-                                if let currentFrame = cameraManager.currentFrame {
-                                    tracker.startTracking(targetRect: box.rect, in: currentFrame)
-                                }
-                            }
-                        }
                     }
                 }
                 // Apply the digital pan and zoom
