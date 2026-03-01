@@ -67,7 +67,9 @@ class ActivityClassifier {
         appendHistory(&arHistory, val: boxW / boxH)
         appendHistory(&areaHistory, val: area)
         
-        if cxHistory.count < 1 {
+        // Need at least 2 points to compute frame-to-frame motion.
+        if cxHistory.count < 2 {
+            signals.historyCount = cxHistory.count
             return .unknown
         }
         

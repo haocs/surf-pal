@@ -17,6 +17,30 @@ class Tracker: ObservableObject {
     private var lastObservation: VNDetectedObjectObservation?
     private let activityClassifier = ActivityClassifier()
     private var frameSize = CGSize(width: 1, height: 1)
+
+    private func publishTrackingUpdate(rect: CGRect, confidence: VNConfidence) {
+        let update = {
+            self.trackedBox = BoundingBox(rect: rect, confidence: confidence)
+            self.currentActivity = self.activityClassifier.update(targetRect: rect, frameSize: self.frameSize)
+            self.classifierSignals = self.activityClassifier.signals
+        }
+
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.async(execute: update)
+        }
+    }
+
+    private func publishLostTracking() {
+        if Thread.isMainThread {
+            self.stopTracking()
+        } else {
+            DispatchQueue.main.async {
+                self.stopTracking()
+            }
+        }
+    }
     
     func startTracking(targetRect: CGRect, in pixelBuffer: CVPixelBuffer) {
         self.isTracking = true
@@ -68,17 +92,11 @@ class Tracker: ObservableObject {
                                             y: 1 - rect.origin.y - rect.height,
                                             width: rect.width,
                                             height: rect.height)
-                
-                DispatchQueue.main.async {
-                    self.trackedBox = BoundingBox(rect: normalizedRect, confidence: result.confidence)
-                    self.currentActivity = self.activityClassifier.update(targetRect: normalizedRect, frameSize: self.frameSize)
-                    self.classifierSignals = self.activityClassifier.signals
-                }
+
+                self.publishTrackingUpdate(rect: normalizedRect, confidence: result.confidence)
             } else {
                 // Tracking lost
-                DispatchQueue.main.async {
-                    self.stopTracking()
-                }
+                self.publishLostTracking()
             }
         }
         

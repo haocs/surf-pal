@@ -39,14 +39,6 @@ struct ContentView: View {
                                                 } else {
                                                     detector.processFrame(newFrame)
                                                 }
-                                                
-                                                // UPDATE METRICS EVERY FRAME FOR RECORDING
-                                                cameraManager.currentTrackedBox = tracker.trackedBox
-                                                cameraManager.currentDetectedBoxes = detector.detectedBoxes
-                                                cameraManager.currentTrackID = tracker.trackID
-                                                cameraManager.currentActivity = tracker.currentActivity
-                                                cameraManager.currentSignals = tracker.classifierSignals
-                                                cameraManager.currentZoomScale = virtualCameraman.scale
                                             })
                                         
                                         // Bounding Boxes Layer
@@ -203,14 +195,26 @@ struct ContentView: View {
                 }
             }
             .ignoresSafeArea()
-            .onChange(of: tracker.trackedBox?.id, perform: { newId in
-                // Keep CameraManager updated with initial state of tracking
-                cameraManager.currentTrackedBox = tracker.trackedBox
-                cameraManager.currentTrackID = tracker.trackID
-            })
-            .onChange(of: detector.detectedBoxes.first?.id, perform: { _ in
-                cameraManager.currentDetectedBoxes = detector.detectedBoxes
-            })
+            // Keep debug HUD state in CameraManager synchronized to
+            // the source-of-truth publishers instead of frame-loop snapshots.
+            .onReceive(tracker.$trackedBox) { newBox in
+                cameraManager.currentTrackedBox = newBox
+            }
+            .onReceive(tracker.$trackID) { newTrackID in
+                cameraManager.currentTrackID = newTrackID
+            }
+            .onReceive(tracker.$currentActivity) { newActivity in
+                cameraManager.currentActivity = newActivity
+            }
+            .onReceive(tracker.$classifierSignals) { newSignals in
+                cameraManager.currentSignals = newSignals
+            }
+            .onReceive(detector.$detectedBoxes) { newBoxes in
+                cameraManager.currentDetectedBoxes = newBoxes
+            }
+            .onReceive(virtualCameraman.$scale) { newScale in
+                cameraManager.currentZoomScale = newScale
+            }
         }
         .onAppear {
             cameraManager.start()
