@@ -51,6 +51,7 @@ class Display:
         locked_track_id: Optional[int],
         activity: Activity = Activity.UNKNOWN,
         zoom_level: float = 0.0,
+        signals: Optional["ClassifierSignals"] = None,
     ) -> np.ndarray:
         """
         Build the full-resolution debug frame for this iteration.
@@ -69,6 +70,7 @@ class Display:
             locked_track_id: Current locked track ID, or None.
             activity:        Current classified activity.
             zoom_level:      Current dynamic zoom factor.
+            signals:         Raw motion signals for debug HUD.
 
         Returns:
             Annotated BGR frame at full resolution.
@@ -94,7 +96,7 @@ class Display:
         # --- Step 3: optional target-specific overlay ---
         if self.debug_tracking:
             self._draw_target_overlay(
-                debug_frame, target_box, locked_track_id, activity, zoom_level
+                debug_frame, target_box, locked_track_id, activity, zoom_level, signals
             )
 
         return debug_frame
@@ -125,6 +127,7 @@ class Display:
         locked_track_id: Optional[int],
         activity: Activity = Activity.UNKNOWN,
         zoom_level: float = 0.0,
+        signals: Optional["ClassifierSignals"] = None,
     ) -> None:
         """
         Draw the target bounding box, TRACKING/LOST status, activity label,
@@ -151,13 +154,27 @@ class Display:
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2,
             )
 
-        # --- Activity + Zoom HUD (one line above the status line) ---
+        # --- Activity + Zoom HUD ---
         hud_y = ui_y - 40
         hud_text = f"Activity: {activity.value}  |  Zoom: {zoom_level:.1f}x"
         cv2.putText(
             frame, hud_text, (ui_x, hud_y),
             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2,
         )
+
+        # --- Raw Signals (Diagnostic) ---
+        if signals:
+            sig_y = hud_y - 35
+            sig_text = (
+                f"SPD: {signals.total_speed:.1f} | "
+                f"VSPD: {signals.vert_speed:.1f} | "
+                f"VAR: {signals.area_cv:.3f} | "
+                f"AR: {signals.avg_ar:.2f}"
+            )
+            cv2.putText(
+                frame, sig_text, (ui_x, sig_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1,
+            )
 
     def _scale_for_screen(self, frame: np.ndarray) -> np.ndarray:
         """

@@ -152,6 +152,7 @@ def main(
             debug_frame = display.render(
                 frame, results, crop_rect, target_box, locked_track_id,
                 activity=activity, zoom_level=zoom,
+                signals=activity_classifier.signals,
             )
             display.show(debug_frame, cropped_view)
 
