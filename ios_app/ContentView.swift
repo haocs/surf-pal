@@ -21,6 +21,14 @@ struct ContentView: View {
                                 } else {
                                     detector.processFrame(newFrame)
                                 }
+                                
+                                // UPDATE METRICS EVERY FRAME FOR RECORDING
+                                cameraManager.currentTrackedBox = tracker.trackedBox
+                                cameraManager.currentDetectedBoxes = detector.detectedBoxes
+                                cameraManager.currentTrackID = tracker.trackID
+                                cameraManager.currentActivity = tracker.currentActivity
+                                cameraManager.currentSignals = tracker.classifierSignals
+                                cameraManager.currentZoomScale = virtualCameraman.scale
                             })
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
@@ -75,50 +83,32 @@ struct ContentView: View {
                     
                     Spacer()
                     
-                    if isDebugMode && tracker.isTracking {
-                        VStack(alignment: .leading) {
-                            Text("ID: \(tracker.trackID)")
-                            Text("STATE: \(tracker.currentActivity.rawValue)")
+                    Spacer()
+                    
+                    if isDebugMode {
+                        VStack(alignment: .leading, spacing: 2) {
+                            if tracker.isTracking {
+                                Text("ID: \(tracker.trackID)")
+                                Text("ACT: \(tracker.currentActivity.rawValue)")
+                                Text("SPD: \(String(format: "%.1f", tracker.classifierSignals.totalSpeed))")
+                            } else {
+                                Text("STATUS: DETECTING")
+                                Text("COUNT: \(detector.detectedBoxes.count)")
+                            }
                             Text("ZOOM: \(String(format: "%.2fx", virtualCameraman.scale))")
-                            Divider().background(Color.white)
-                            Text("SPD: \(String(format: "%.1f", tracker.classifierSignals.totalSpeed))")
-                            Text("V-SPD: \(String(format: "%.1f", tracker.classifierSignals.vertSpeed))")
-                            Text("VAR: \(String(format: "%.3f", tracker.classifierSignals.areaCV))")
-                            Text("AR: \(String(format: "%.2f", tracker.classifierSignals.avgAR))")
                         }
-                        .font(.caption.monospaced())
+                        .font(.system(.caption, design: .monospaced))
                         .foregroundColor(.yellow)
-                        .padding()
+                        .padding(8)
                         .background(Color.black.opacity(0.6))
                         .cornerRadius(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal)
+                        .padding(.bottom, 10)
                     }
-                    
-                    // Middle-Bottom: Debug Toggle
-                    HStack {
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text("Debug Mode")
-                                .font(.caption2)
-                                .foregroundColor(.yellow.opacity(0.8))
-                                .bold()
-                            Toggle("", isOn: $isDebugMode)
-                                .toggleStyle(SwitchToggleStyle(tint: .yellow))
-                                .labelsHidden()
-                        }
-                        .padding(8)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: 15))
-                        .padding(.trailing)
-                        .onChange(of: isDebugMode, perform: { newVal in
-                            cameraManager.isDebugModeEnabled = newVal
-                        })
-                    }
-                    .padding(.bottom, 10)
                     
                     // Bottom Control Bar
                     HStack(spacing: 40) {
+                        // Flip Camera
                         Button(action: {
                             cameraManager.flipCamera()
                         }) {
@@ -130,6 +120,7 @@ struct ContentView: View {
                                 .clipShape(Circle())
                         }
                         
+                        // Record
                         Button(action: {
                             cameraManager.toggleRecording()
                         }) {
@@ -150,36 +141,50 @@ struct ContentView: View {
                             }
                         }
                         
-                        if tracker.isTracking {
-                            Button(action: {
-                                tracker.stopTracking()
-                                virtualCameraman.reset()
-                            }) {
-                                Image(systemName: "xmark")
-                                    .font(.title2)
-                                    .foregroundColor(.white)
-                                    .frame(width: 50, height: 50)
-                                    .background(Color.red.opacity(0.8))
-                                    .clipShape(Circle())
+                        // Action / Debug Column
+                        VStack(spacing: 12) {
+                            if tracker.isTracking {
+                                Button(action: {
+                                    tracker.stopTracking()
+                                    virtualCameraman.reset()
+                                }) {
+                                    Image(systemName: "xmark")
+                                        .font(.title2)
+                                        .foregroundColor(.white)
+                                        .frame(width: 50, height: 50)
+                                        .background(Color.red.opacity(0.8))
+                                        .clipShape(Circle())
+                                }
                             }
-                        } else {
-                            Color.clear.frame(width: 50, height: 50)
+                            
+                            // Always show Debug Toggle
+                            VStack(spacing: 2) {
+                                Text("DEBUG")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(.white)
+                                Toggle("", isOn: $isDebugMode)
+                                    .toggleStyle(SwitchToggleStyle(tint: .yellow))
+                                    .labelsHidden()
+                                    .scaleEffect(0.8)
+                            }
+                            .frame(width: 50, height: 50)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                            .onChange(of: isDebugMode, perform: { newVal in
+                                cameraManager.isDebugModeEnabled = newVal
+                            })
                         }
                     }
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 30)
                 }
             }
             .ignoresSafeArea()
-            // Route state from Tracker/VC down to CameraManager whenever it changes
-            // so that CameraManager has the latest frame values to burn into the video
             .onChange(of: tracker.trackedBox?.id, perform: { newId in
                 virtualCameraman.update(targetBox: tracker.trackedBox, screenSize: geometry.size)
                 
+                // Keep CameraManager updated with initial state of tracking
                 cameraManager.currentTrackedBox = tracker.trackedBox
                 cameraManager.currentTrackID = tracker.trackID
-                cameraManager.currentActivity = tracker.currentActivity
-                cameraManager.currentSignals = tracker.classifierSignals
-                cameraManager.currentZoomScale = virtualCameraman.scale
             })
             .onChange(of: detector.detectedBoxes.first?.id, perform: { _ in
                 cameraManager.currentDetectedBoxes = detector.detectedBoxes

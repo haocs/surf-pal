@@ -109,10 +109,14 @@ class HUDOverlay {
         
         // Draw black background for readability
         let ctx = UIGraphicsGetCurrentContext()
+        ctx?.saveGState()
+        
+        // Slightly larger background for better contrast
         ctx?.setFillColor(UIColor.black.withAlphaComponent(0.6).cgColor)
-        ctx?.fill(textRect.insetBy(dx: -5, dy: -5))
+        ctx?.fill(textRect.insetBy(dx: -8, dy: -8))
         
         text.draw(at: point)
+        ctx?.restoreGState()
     }
 }
 
