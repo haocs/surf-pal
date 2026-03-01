@@ -7,6 +7,7 @@ struct ContentView: View {
     @StateObject private var virtualCameraman = VirtualCameraman()
     
     @State private var isDebugMode = false
+    @State private var lastLostEventID: UUID?
     
     var body: some View {
         GeometryReader { geometry in
@@ -27,18 +28,21 @@ struct ContentView: View {
                                         FrameView(pixelBuffer: frame)
                                             .frame(width: innerGeo.size.width, height: innerGeo.size.height)
                                             .onChange(of: frame, perform: { newFrame in
-                                                if tracker.isTracking {
+                                                // Select mode: run Vision box tracker after user tap.
+                                                // Auto mode: run detector continuously and let Tracker
+                                                // lock onto the best candidate from detections.
+                                                if tracker.mode == .select && tracker.isTracking {
                                                     tracker.updateTracking(with: newFrame)
-                                                    
-                                                    // UPDATE ZOOM CONTROLLER EVERY FRAME
-                                                    virtualCameraman.update(
-                                                        targetBox: tracker.trackedBox,
-                                                        activity: tracker.currentActivity,
-                                                        screenSize: innerGeo.size
-                                                    )
                                                 } else {
                                                     detector.processFrame(newFrame)
                                                 }
+
+                                                // UPDATE ZOOM CONTROLLER EVERY FRAME
+                                                virtualCameraman.update(
+                                                    targetBox: tracker.trackedBox,
+                                                    activity: tracker.currentActivity,
+                                                    screenSize: innerGeo.size
+                                                )
                                             })
                                         
                                         // Bounding Boxes Layer
@@ -54,18 +58,27 @@ struct ContentView: View {
                                             }
                                         } else {
                                             ForEach(detector.detectedBoxes, id: \.id) { box in
-                                                BoundingBoxView(
-                                                    normalizedRect: box.rect,
-                                                    screenSize: innerGeo.size,
-                                                    color: .red,
-                                                    label: "Person (\(String(format: "%.2f", box.confidence)))"
-                                                )
-                                                .contentShape(Rectangle())
-                                                .onTapGesture {
-                                                    // User selected a target to track
-                                                    if let currentFrame = cameraManager.currentFrame {
-                                                        tracker.startTracking(targetRect: box.rect, in: currentFrame)
+                                                if tracker.mode == .select {
+                                                    BoundingBoxView(
+                                                        normalizedRect: box.rect,
+                                                        screenSize: innerGeo.size,
+                                                        color: .red,
+                                                        label: "Person (\(String(format: "%.2f", box.confidence)))"
+                                                    )
+                                                    .contentShape(Rectangle())
+                                                    .onTapGesture {
+                                                        // User selected a target to track
+                                                        if let currentFrame = cameraManager.currentFrame {
+                                                            tracker.startTracking(targetRect: box.rect, in: currentFrame)
+                                                        }
                                                     }
+                                                } else {
+                                                    BoundingBoxView(
+                                                        normalizedRect: box.rect,
+                                                        screenSize: innerGeo.size,
+                                                        color: .red,
+                                                        label: "Person (\(String(format: "%.2f", box.confidence)))"
+                                                    )
                                                 }
                                             }
                                         }
@@ -87,14 +100,48 @@ struct ContentView: View {
                 
                 // 2. Static UI Controls Overlay
                 VStack {
-                    if !tracker.isTracking {
-                        Text("Tap a person to start tracking")
+                    VStack(spacing: 10) {
+                        Picker("Tracking Mode", selection: Binding(
+                            get: { tracker.mode },
+                            set: { newMode in
+                                tracker.setMode(newMode)
+                                virtualCameraman.reset()
+                            }
+                        )) {
+                            ForEach(TrackingMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(10)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(12)
+
+                        if let lostMessage = tracker.lostEvent?.message {
+                            Text(lostMessage)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color.red.opacity(0.85))
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        }
+
+                        if tracker.mode == .select && !tracker.isTracking {
+                            Text("Select mode: tap a surfer to start tracking")
+                                .padding()
+                                .background(Color.black.opacity(0.6))
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        } else if tracker.mode == .auto && !tracker.isTracking {
+                            Text("Auto mode: scanning for surfer")
                             .padding()
                             .background(Color.black.opacity(0.6))
                             .foregroundColor(.white)
                             .cornerRadius(10)
-                            .padding(.top, geometry.safeAreaInsets.top + 20)
+                        }
                     }
+                    .padding(.top, geometry.safeAreaInsets.top + 12)
+                    .padding(.horizontal)
                     
                     Spacer()
                     
@@ -104,11 +151,13 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             if tracker.isTracking {
                                 Text("ID: \(tracker.trackID)")
-                                Text("ACT: \(tracker.currentActivity.rawValue)")
+                                Text("MODE: \(tracker.mode.rawValue.uppercased())")
+                                Text("ACT: \(tracker.currentActivity.rawValue.lowercased())")
                                 Text("SPD: \(String(format: "%.1f", tracker.classifierSignals.totalSpeed))")
                                 Text("HIST: \(tracker.classifierSignals.historyCount)")
                             } else {
                                 Text("STATUS: DETECTING")
+                                Text("MODE: \(tracker.mode.rawValue.uppercased())")
                                 Text("COUNT: \(detector.detectedBoxes.count)")
                             }
                             Text("ZOOM: \(String(format: "%.2fx", virtualCameraman.scale))")
@@ -159,7 +208,7 @@ struct ContentView: View {
                         
                         // Action / Debug Column
                         VStack(spacing: 12) {
-                            if tracker.isTracking {
+                            if tracker.mode == .select && tracker.isTracking {
                                 Button(action: {
                                     tracker.stopTracking()
                                     virtualCameraman.reset()
@@ -211,9 +260,28 @@ struct ContentView: View {
             }
             .onReceive(detector.$detectedBoxes) { newBoxes in
                 cameraManager.currentDetectedBoxes = newBoxes
+
+                // Auto mode lock logic runs on detector output.
+                if tracker.mode == .auto, let frame = cameraManager.currentFrame {
+                    let frameSize = CGSize(
+                        width: CGFloat(CVPixelBufferGetWidth(frame)),
+                        height: CGFloat(CVPixelBufferGetHeight(frame))
+                    )
+                    tracker.updateAutoTracking(with: newBoxes, frameSize: frameSize)
+                }
             }
             .onReceive(virtualCameraman.$scale) { newScale in
                 cameraManager.currentZoomScale = newScale
+            }
+            .onReceive(tracker.$lostEvent) { event in
+                guard let event = event else { return }
+                lastLostEventID = event.id
+                let currentID = event.id
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    if lastLostEventID == currentID {
+                        tracker.clearLostEvent()
+                    }
+                }
             }
         }
         .onAppear {
