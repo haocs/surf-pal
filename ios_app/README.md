@@ -23,8 +23,11 @@ This directory contains the Swift source code and Apple CoreML model to build th
 4. When the dialog appears, make sure **Copy items if needed** is checked, and click Finish.
 
 ## Step 3: Import the Machine Learning Model
-1. Go back to the main `surf-pal` folder in Finder.
-2. Locate the exported `yolov8n.mlpackage` file.
+1. If you haven't already, generate the Apple CoreML model from the PyTorch weights:
+   - Open a terminal and navigate to the `models/` folder in this repository.
+   - Run `python3 export_coreml.py`.
+   - This will download the YOLOv8 weights and generate a `yolov8n.mlpackage` folder.
+2. Locate the generated `yolov8n.mlpackage` file inside the `models/` directory.
 3. Drag it into the Xcode Project Navigator, just like the Swift files. Make sure **Copy items if needed** is checked.
 4. **CRITICAL STEP:** Click on `yolov8n.mlpackage` in the Xcode Project Navigator. Then look at the right sidebar (File Inspector). Under the **Target Membership** section, make sure the checkbox next to your app name (`SurfPal`) is **CHECKED**. Xcode will generate the necessary Swift code in the background.
 
