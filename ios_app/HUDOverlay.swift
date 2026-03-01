@@ -36,9 +36,14 @@ class HUDOverlay {
         }
         
         // UIGraphicsPushContext allows us to use high-level UIKit drawing (like NSString.draw)
-        // directly onto the CVPixelBuffer context without worrying about CoreText mirroring issues.
+        // directly onto the CVPixelBuffer context.
         UIGraphicsPushContext(context)
         defer { UIGraphicsPopContext() }
+        
+        // Flip coordinate system because CoreGraphics defaults to bottom-left origin.
+        // This ensures text is upright and bounding boxes match SwiftUI's top-left coordinates.
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1.0, y: -1.0)
         
         context.setLineWidth(4.0)
         
