@@ -7,6 +7,7 @@ Responsibilities:
   • Compositing detection overlays on the full-resolution frame.
   • Drawing the virtual-camera crop rectangle.
   • Optionally drawing the locked-target bounding box and status text.
+  • Showing current activity and zoom level in the debug HUD.
   • Downscaling the debug frame to fit 1080p monitors.
   • Showing the World View and Virtual Camera windows.
 """
@@ -15,6 +16,8 @@ from __future__ import annotations
 from typing import Optional, Tuple
 import cv2
 import numpy as np
+
+from core.activity import Activity
 
 
 # Maximum display width — frames wider than this are scaled down for viewing
@@ -46,6 +49,8 @@ class Display:
         crop_rect: Tuple[int, int, int, int],
         target_box: Optional[np.ndarray],
         locked_track_id: Optional[int],
+        activity: Activity = Activity.UNKNOWN,
+        zoom_level: float = 0.0,
     ) -> np.ndarray:
         """
         Build the full-resolution debug frame for this iteration.
@@ -53,8 +58,8 @@ class Display:
         Steps:
           1. Plot all YOLO detections (bounding boxes + labels).
           2. Draw the virtual-camera crop window in cyan.
-          3. If debug_tracking is enabled, overlay the target box and
-             a status text string.
+          3. If debug_tracking is enabled, overlay the target box,
+             status text, activity label, and current zoom.
 
         Args:
             frame:           Raw BGR frame from the video source.
@@ -62,6 +67,8 @@ class Display:
             crop_rect:       ``(x, y, w, h)`` of the current crop window.
             target_box:      ``[x1, y1, x2, y2]`` of the locked target, or None.
             locked_track_id: Current locked track ID, or None.
+            activity:        Current classified activity.
+            zoom_level:      Current dynamic zoom factor.
 
         Returns:
             Annotated BGR frame at full resolution.
@@ -86,7 +93,9 @@ class Display:
 
         # --- Step 3: optional target-specific overlay ---
         if self.debug_tracking:
-            self._draw_target_overlay(debug_frame, target_box, locked_track_id)
+            self._draw_target_overlay(
+                debug_frame, target_box, locked_track_id, activity, zoom_level
+            )
 
         return debug_frame
 
@@ -114,13 +123,15 @@ class Display:
         frame: np.ndarray,
         target_box: Optional[np.ndarray],
         locked_track_id: Optional[int],
+        activity: Activity = Activity.UNKNOWN,
+        zoom_level: float = 0.0,
     ) -> None:
         """
-        Draw the target bounding box and a TRACKING/LOST status string
-        at the bottom-left corner of the frame (in-place).
+        Draw the target bounding box, TRACKING/LOST status, activity label,
+        and current zoom level at the bottom-left corner of the frame (in-place).
         """
         ui_x = 30
-        ui_y = self.frame_height - 30  # bottom-left anchor
+        ui_y = self.frame_height - 30  # bottom-left anchor for status line
 
         if target_box is not None:
             # Green box around the locked surfer
@@ -139,6 +150,14 @@ class Display:
                 frame, text, (ui_x, ui_y),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2,
             )
+
+        # --- Activity + Zoom HUD (one line above the status line) ---
+        hud_y = ui_y - 40
+        hud_text = f"Activity: {activity.value}  |  Zoom: {zoom_level:.1f}x"
+        cv2.putText(
+            frame, hud_text, (ui_x, hud_y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2,
+        )
 
     def _scale_for_screen(self, frame: np.ndarray) -> np.ndarray:
         """

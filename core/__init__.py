@@ -14,6 +14,9 @@ from core.tracker import Tracker
 from core.event_logger import EventLogger
 from core.display import Display
 from core.writer import VideoOutputWriter
+from core.activity import Activity, ActivityClassifier
+from core.zoom_controller import ZoomController
+from core.tracking import TrackingStrategy, TrackingResult, LargestPersonStrategy
 
 __all__ = [
     "VideoLoader",
@@ -23,4 +26,10 @@ __all__ = [
     "EventLogger",
     "Display",
     "VideoOutputWriter",
+    "Activity",
+    "ActivityClassifier",
+    "ZoomController",
+    "TrackingStrategy",
+    "TrackingResult",
+    "LargestPersonStrategy",
 ]

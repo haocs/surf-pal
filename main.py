@@ -9,10 +9,14 @@ this file is intentionally kept as thin orchestration only.
 
 Pipeline overview
 -----------------
-  VideoLoader ──► Detector ──► Tracker ──► Cameraman
-                                   │              │
-                                   ▼              ▼
-                             EventLogger    Display + VideoOutputWriter
+  VideoLoader ──► Detector ──► Tracker ──► ActivityClassifier
+                                  │               │
+                                  │         ZoomController
+                                  │               │
+                                  ▼               ▼
+                            EventLogger      Cameraman
+                                              │
+                                    Display + VideoOutputWriter
 """
 
 import cv2
@@ -26,6 +30,8 @@ from core.tracker import Tracker
 from core.event_logger import EventLogger
 from core.display import Display
 from core.writer import VideoOutputWriter
+from core.activity import ActivityClassifier
+from core.zoom_controller import ZoomController
 
 
 # ---------------------------------------------------------------------------
@@ -42,13 +48,20 @@ ASSUMED_FPS = 30.0  # Fall back when the source doesn't report its own FPS
 # Main function
 # ---------------------------------------------------------------------------
 
-def main(source, zoom_level: float = 2.0, show_debug: bool = True, debug_tracking: bool = False) -> None:
+def main(
+    source,
+    zoom_level: float = 2.0,
+    show_debug: bool = True,
+    debug_tracking: bool = False,
+) -> None:
     """
     Run the surf-pal virtual camera pipeline on *source*.
 
     Args:
         source:          Video file path or webcam index (int).
-        zoom_level:      Crop zoom factor forwarded to :class:`Cameraman`.
+        zoom_level:      Initial crop zoom factor forwarded to :class:`Cameraman`.
+                         This sets the baseline output size; dynamic zoom varies
+                         around it at runtime.
         show_debug:      Show the annotated World View and Virtual Camera windows.
         debug_tracking:  Draw target overlays, write a full-res debug video, and
                          save a JSON event log to ``tmp/debug_log.json``.
@@ -76,8 +89,10 @@ def main(source, zoom_level: float = 2.0, show_debug: bool = True, debug_trackin
     # ------------------------------------------------------------------
     detector = Detector("yolov8n.pt")
     cameraman = Cameraman(w, h, zoom_level=zoom_level)
-    tracker = Tracker()
+    tracker = Tracker()  # uses LargestPersonStrategy by default
     event_logger = EventLogger(fps=fps)
+    activity_classifier = ActivityClassifier()
+    zoom_controller = ZoomController()
     display = Display(frame_height=h, debug_tracking=debug_tracking)
 
     writer = VideoOutputWriter(
@@ -110,15 +125,22 @@ def main(source, zoom_level: float = 2.0, show_debug: bool = True, debug_trackin
         # --- Detect & Track ---
         results = detector.track(frame)
 
-        # --- Select target (lock + fallback logic) ---
-        target_box, locked_track_id, prev_locked_id = tracker.update(results)
+        # --- Select target (pluggable strategy) ---
+        tracking_result = tracker.update(results)
+        target_box = tracking_result.target_box
+        locked_track_id = tracking_result.track_id
+
+        # --- Classify activity + update dynamic zoom ---
+        activity = activity_classifier.update(target_box, h)
+        zoom = zoom_controller.update(activity)
+        cameraman.set_zoom(zoom)
 
         # --- Log TRACKING / LOST state transitions ---
         event_logger.update(
             frame_count=frame_count,
             locked_track_id=locked_track_id,
             is_visible=(target_box is not None),
-            prev_locked_id=prev_locked_id,
+            prev_locked_id=tracking_result.prev_id,
         )
 
         # --- Compute virtual camera crop ---
@@ -127,7 +149,10 @@ def main(source, zoom_level: float = 2.0, show_debug: bool = True, debug_trackin
 
         # --- Render & display debug view ---
         if show_debug:
-            debug_frame = display.render(frame, results, crop_rect, target_box, locked_track_id)
+            debug_frame = display.render(
+                frame, results, crop_rect, target_box, locked_track_id,
+                activity=activity, zoom_level=zoom,
+            )
             display.show(debug_frame, cropped_view)
 
             # Write full-res debug frame to file if the debug writer is active
@@ -166,7 +191,7 @@ if __name__ == "__main__":
         "--zoom",
         type=float,
         default=2.0,
-        help="Zoom level — e.g. 2.0 gives a 2× crop of the original frame.",
+        help="Initial zoom level — e.g. 2.0 gives a 2× crop. Dynamic zoom varies around this.",
     )
     parser.add_argument(
         "--debug",
