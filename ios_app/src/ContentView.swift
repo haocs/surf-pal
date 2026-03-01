@@ -29,6 +29,13 @@ struct ContentView: View {
                                             .onChange(of: frame, perform: { newFrame in
                                                 if tracker.isTracking {
                                                     tracker.updateTracking(with: newFrame)
+                                                    
+                                                    // UPDATE ZOOM CONTROLLER EVERY FRAME
+                                                    virtualCameraman.update(
+                                                        targetBox: tracker.trackedBox,
+                                                        activity: tracker.currentActivity,
+                                                        screenSize: innerGeo.size
+                                                    )
                                                 } else {
                                                     detector.processFrame(newFrame)
                                                 }
@@ -107,6 +114,7 @@ struct ContentView: View {
                                 Text("ID: \(tracker.trackID)")
                                 Text("ACT: \(tracker.currentActivity.rawValue)")
                                 Text("SPD: \(String(format: "%.1f", tracker.classifierSignals.totalSpeed))")
+                                Text("HIST: \(tracker.classifierSignals.historyCount)")
                             } else {
                                 Text("STATUS: DETECTING")
                                 Text("COUNT: \(detector.detectedBoxes.count)")
@@ -196,19 +204,12 @@ struct ContentView: View {
             }
             .ignoresSafeArea()
             .onChange(of: tracker.trackedBox?.id, perform: { newId in
-                virtualCameraman.update(targetBox: tracker.trackedBox, screenSize: geometry.size)
-                
                 // Keep CameraManager updated with initial state of tracking
                 cameraManager.currentTrackedBox = tracker.trackedBox
                 cameraManager.currentTrackID = tracker.trackID
             })
             .onChange(of: detector.detectedBoxes.first?.id, perform: { _ in
                 cameraManager.currentDetectedBoxes = detector.detectedBoxes
-            })
-            .onChange(of: geometry.size, perform: { newSize in
-                if tracker.isTracking {
-                    virtualCameraman.update(targetBox: tracker.trackedBox, screenSize: newSize)
-                }
             })
         }
         .onAppear {

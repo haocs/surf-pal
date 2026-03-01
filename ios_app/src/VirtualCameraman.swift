@@ -17,10 +17,10 @@ class VirtualCameraman: ObservableObject {
     
     func reset() {
         // Smoothly return to 1x zoom, centered
-        update(targetBox: nil, screenSize: CGSize(width: 1, height: 1))
+        update(targetBox: nil, activity: .unknown, screenSize: CGSize(width: 1, height: 1))
     }
     
-    func update(targetBox: BoundingBox?, screenSize: CGSize) {
+    func update(targetBox: BoundingBox?, activity: Activity, screenSize: CGSize) {
         let targetCx: CGFloat
         let targetCy: CGFloat
         let targetScale: CGFloat
@@ -30,9 +30,22 @@ class VirtualCameraman: ObservableObject {
             targetCx = box.rect.midX
             targetCy = box.rect.midY
             
-            // Calculate scale: we want the max dimension of the box to take up ~30% of the screen
-            let maxDim = max(box.rect.width, box.rect.height)
-            targetScale = max(1.0, min(4.0, 0.3 / maxDim))
+            // Base scale based on box size (aim to keep box at ~25% of screen height)
+            let boxHeight = box.rect.height
+            let boxWidth = box.rect.width
+            let baseScale = max(1.0, min(5.0, 0.25 / max(boxHeight, boxWidth * 0.5)))
+            
+            // Adjust scale based on activity
+            switch activity {
+            case .riding:
+                // Zoom in more aggressively during riding
+                targetScale = baseScale * 1.5
+            case .paddling:
+                // Zoom out to show more context during paddling
+                targetScale = max(1.0, baseScale * 0.7)
+            case .sitting, .unknown:
+                targetScale = baseScale
+            }
         } else {
             // Return to center and 1x scale if no target
             targetCx = 0.5
@@ -40,10 +53,13 @@ class VirtualCameraman: ObservableObject {
             targetScale = 1.0
         }
         
+        // Clamp total scale
+        let clampedScale = max(1.0, min(6.0, targetScale))
+        
         // Apply EMA smoothing
         currentCx = (1 - alphaPan) * currentCx + alphaPan * targetCx
         currentCy = (1 - alphaPan) * currentCy + alphaPan * targetCy
-        currentScale = (1 - alphaScale) * currentScale + alphaScale * targetScale
+        currentScale = (1 - alphaScale) * currentScale + alphaScale * clampedScale
         
         // Set the published properties for SwiftUI
         // Offset = -Scale * (Target - Center) * Screen Dimension

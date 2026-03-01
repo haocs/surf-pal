@@ -15,6 +15,7 @@ struct ClassifierSignals {
     var vertSpeed: CGFloat = 0.0
     var areaCV: CGFloat = 0.0
     var avgAR: CGFloat = 0.0
+    var historyCount: Int = 0
 }
 
 class ActivityClassifier {
@@ -66,7 +67,7 @@ class ActivityClassifier {
         appendHistory(&arHistory, val: boxW / boxH)
         appendHistory(&areaHistory, val: area)
         
-        if cxHistory.count < 2 {
+        if cxHistory.count < 1 {
             return .unknown
         }
         
@@ -97,14 +98,14 @@ class ActivityClassifier {
             let dy = cyHistory[i] - cyHistory[i-1]
             speeds2D.append(sqrt(dx*dx + dy*dy))
         }
-        let totalSpeed = speeds2D.reduce(0, +) / CGFloat(speeds2D.count)
+        let totalSpeed = speeds2D.isEmpty ? 0.0 : speeds2D.reduce(0, +) / CGFloat(speeds2D.count)
         
         // Vertical Speed
         var vertSpeeds: [CGFloat] = []
         for i in 1..<n {
             vertSpeeds.append(abs(cyHistory[i] - cyHistory[i-1]))
         }
-        let vertSpeed = vertSpeeds.reduce(0, +) / CGFloat(vertSpeeds.count)
+        let vertSpeed = vertSpeeds.isEmpty ? 0.0 : vertSpeeds.reduce(0, +) / CGFloat(vertSpeeds.count)
         
         // Area Variance (CV = std / mean)
         let meanArea = areaHistory.reduce(0, +) / CGFloat(areaHistory.count)
@@ -118,7 +119,13 @@ class ActivityClassifier {
         let avgAR = arHistory.reduce(0, +) / CGFloat(arHistory.count)
         
         // Update Signals struct
-        signals = ClassifierSignals(totalSpeed: totalSpeed, vertSpeed: vertSpeed, areaCV: areaVar, avgAR: avgAR)
+        signals = ClassifierSignals(
+            totalSpeed: totalSpeed,
+            vertSpeed: vertSpeed,
+            areaCV: areaVar,
+            avgAR: avgAR,
+            historyCount: n
+        )
         
         // Rules
         if totalSpeed >= ridingSpeedThreshold {
