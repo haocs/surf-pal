@@ -22,6 +22,7 @@ Pipeline overview
 import cv2
 import argparse
 import time
+from pathlib import Path
 
 from core.video_loader import VideoLoader
 from core.detector import Detector
@@ -42,6 +43,7 @@ OUTPUT_PATH = "tmp/output.mp4"
 DEBUG_OUTPUT_PATH = "tmp/output_debug.mp4"
 DEBUG_LOG_PATH = "tmp/debug_log.json"
 ASSUMED_FPS = 30.0  # Fall back when the source doesn't report its own FPS
+MODEL_PATH = Path(__file__).resolve().parent / "models" / "yolov8n.pt"
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +89,7 @@ def main(
     # ------------------------------------------------------------------
     # Initialise pipeline components
     # ------------------------------------------------------------------
-    detector = Detector("yolov8n.pt")
+    detector = Detector(str(MODEL_PATH))
     cameraman = Cameraman(w, h, zoom_level=zoom_level)
     tracker = Tracker()  # uses LargestPersonStrategy by default
     event_logger = EventLogger(fps=fps)

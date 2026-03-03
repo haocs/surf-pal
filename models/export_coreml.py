@@ -8,18 +8,31 @@ Usage:
     cd models/
     python3 export_coreml.py
 """
+from pathlib import Path
+import os
 from ultralytics import YOLO
 
 def main():
+    models_dir = Path(__file__).resolve().parent
+    pt_path = models_dir / "yolov8n.pt"
+    output_path = models_dir / "yolov8n.mlpackage"
+
+    if not pt_path.exists():
+        print(f"Missing weights at {pt_path}")
+        print("Place yolov8n.pt in models/ before exporting.")
+        return
+
+    # Export output is created in the current working directory.
+    os.chdir(models_dir)
+
     print("Loading YOLOv8n model...")
-    # Load the YOLOv8n model (will download if not present)
-    model = YOLO('yolov8n.pt')
+    model = YOLO(str(pt_path))
     
     print("Exporting to CoreML format...")
     # Export the model to CoreML format
     # nms=True bakes Non-Maximum Suppression into the CoreML model so we don't have to write it in Swift
     model.export(format='coreml', nms=True)
-    print("Done! The 'yolov8n.mlpackage' is ready to be added to your Xcode project.")
+    print(f"Done! CoreML model exported to {output_path}")
 
 if __name__ == "__main__":
     main()

@@ -18,10 +18,10 @@ class Detector:
 
     Args:
         model_path: Path to the ``.pt`` weights file.
-                    Defaults to ``'yolov8n.pt'`` (nano variant).
+                    Defaults to ``'models/yolov8n.pt'`` (nano variant).
     """
 
-    def __init__(self, model_path: str = "yolov8n.pt") -> None:
+    def __init__(self, model_path: str = "models/yolov8n.pt") -> None:
         # Prefer GPU (CUDA), then Apple Silicon (MPS), then fall back to CPU
         if torch.cuda.is_available():
             self.device = "cuda"

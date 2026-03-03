@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IOS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${IOS_DIR}/.." && pwd)"
 
-MODEL_SRC="${REPO_ROOT}/yolov8n.mlpackage"
+MODEL_SRC="${REPO_ROOT}/models/yolov8n.mlpackage"
 MODEL_DEST="${IOS_DIR}/Resources/yolov8n.mlpackage"
 
 mkdir -p "${IOS_DIR}/Resources"

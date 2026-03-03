@@ -19,7 +19,7 @@ make generate
 
 This does all of the following:
 
-1. Verifies `yolov8n.mlpackage` exists at repo root.
+1. Verifies `models/yolov8n.mlpackage` exists.
 2. Copies it into `ios_app/Resources/yolov8n.mlpackage`.
 3. Generates `ios_app/SurfPal.xcodeproj` from `ios_app/project.yml`.
 4. Build phase compiles and embeds `yolov8n.mlmodelc` into the app bundle automatically.

@@ -19,4 +19,4 @@ A completely native on-device iPhone application written in Swift and SwiftUI. I
 See [ios_app/README.md](ios_app/README.md) for instructions on how to assemble the Xcode project.
 
 ### 3. Models (`models/`)
-Contains the script `export_coreml.py` to download the standard `yolov8n.pt` PyTorch weights and export them to the `yolov8n.mlpackage` format required by the iOS app.
+Contains `yolov8n.pt`, `yolov8n.mlpackage`, and the script `export_coreml.py` to export PyTorch weights to CoreML for the iOS app.
