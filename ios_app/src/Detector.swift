@@ -31,15 +31,8 @@ class Detector: ObservableObject {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .all
 
-        guard let modelURL = Bundle.main.url(forResource: "yolov8n", withExtension: "mlmodelc") else {
-            failLoudly(
-                "Missing required model 'yolov8n.mlmodelc' in app bundle. " +
-                "Ensure yolov8n.mlpackage is present in ios_app/Resources and target resources."
-            )
-        }
-
         do {
-            let model = try MLModel(contentsOf: modelURL, configuration: configuration)
+            let model = try loadModel(configuration: configuration)
             let visionModel = try VNCoreMLModel(for: model)
             self.visionModel = visionModel
 
@@ -52,6 +45,51 @@ class Detector: ObservableObject {
         } catch {
             failLoudly("Failed to initialize Vision/CoreML model: \(error)")
         }
+    }
+
+    private func loadModel(configuration: MLModelConfiguration) throws -> MLModel {
+        // Preferred path: Xcode-compiled model in bundle.
+        if let compiledURL = Bundle.main.url(forResource: "yolov8n", withExtension: "mlmodelc") {
+            return try MLModel(contentsOf: compiledURL, configuration: configuration)
+        }
+
+        // Fallback path: raw package in bundle (compile at runtime).
+        if let packageURL = Bundle.main.url(forResource: "yolov8n", withExtension: "mlpackage") {
+            let compiledURL = try MLModel.compileModel(at: packageURL)
+            return try MLModel(contentsOf: compiledURL, configuration: configuration)
+        }
+
+        // Robust fallback: walk bundle in case model is nested in a folder reference.
+        if let compiledURL = findModelRecursively(extension: "mlmodelc") {
+            return try MLModel(contentsOf: compiledURL, configuration: configuration)
+        }
+        if let packageURL = findModelRecursively(extension: "mlpackage") {
+            let compiledURL = try MLModel.compileModel(at: packageURL)
+            return try MLModel(contentsOf: compiledURL, configuration: configuration)
+        }
+
+        failLoudly(
+            "Missing required model in app bundle. Expected yolov8n.mlmodelc or yolov8n.mlpackage. " +
+            "Run `cd ios_app && make sync-model && make generate`, then rebuild."
+        )
+    }
+
+    private func findModelRecursively(extension ext: String) -> URL? {
+        guard let resourceRoot = Bundle.main.resourceURL else { return nil }
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: resourceRoot,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        for case let url as URL in enumerator {
+            let basename = url.deletingPathExtension().lastPathComponent.lowercased()
+            if basename == "yolov8n" && url.pathExtension.lowercased() == ext.lowercased() {
+                return url
+            }
+        }
+        return nil
     }
     
     func processFrame(

@@ -15,8 +15,6 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: src
-    resources:
-      - path: Resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.surfpal.app
@@ -27,7 +25,7 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         TARGETED_DEVICE_FAMILY: "1"
     preBuildScripts:
-      - name: Ensure CoreML Model Exists
+      - name: Prepare CoreML Model
         script: |
           MODEL_PATH="${SRCROOT}/Resources/yolov8n.mlpackage"
           if [ ! -d "${MODEL_PATH}" ]; then
@@ -35,6 +33,16 @@ targets:
             echo "error: Run ./scripts/sync_model.sh (and generate with python3 models/export_coreml.py if needed)."
             exit 1
           fi
+
+          COMPILED_DIR="${DERIVED_FILE_DIR}/CoreMLCompiled"
+          APP_RESOURCES_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "${COMPILED_DIR}" "${APP_RESOURCES_DIR}"
+
+          rm -rf "${COMPILED_DIR}/yolov8n.mlmodelc"
+          xcrun coremlcompiler compile "${MODEL_PATH}" "${COMPILED_DIR}"
+
+          rm -rf "${APP_RESOURCES_DIR}/yolov8n.mlmodelc"
+          cp -R "${COMPILED_DIR}/yolov8n.mlmodelc" "${APP_RESOURCES_DIR}/"
 scheme:
   SurfPal:
     build:

@@ -20,8 +20,9 @@ make generate
 This does all of the following:
 
 1. Verifies `yolov8n.mlpackage` exists at repo root.
-2. Links it into `ios_app/Resources/yolov8n.mlpackage`.
+2. Copies it into `ios_app/Resources/yolov8n.mlpackage`.
 3. Generates `ios_app/SurfPal.xcodeproj` from `ios_app/project.yml`.
+4. Build phase compiles and embeds `yolov8n.mlmodelc` into the app bundle automatically.
 
 If the model is missing, generate it first from repo root:
 
@@ -29,7 +30,7 @@ If the model is missing, generate it first from repo root:
 python3 models/export_coreml.py
 ```
 
-To explicitly link the model into app resources:
+To explicitly copy the model into app resources:
 
 ```bash
 cd ios_app

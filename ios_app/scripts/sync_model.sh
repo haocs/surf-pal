@@ -21,5 +21,5 @@ if [ -L "${MODEL_DEST}" ] || [ -d "${MODEL_DEST}" ]; then
   rm -rf "${MODEL_DEST}"
 fi
 
-ln -s ../../yolov8n.mlpackage "${MODEL_DEST}"
-echo "Linked model: ${MODEL_DEST} -> ../../yolov8n.mlpackage"
+cp -R "${MODEL_SRC}" "${MODEL_DEST}"
+echo "Copied model bundle to ${MODEL_DEST}"
