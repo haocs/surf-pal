@@ -8,7 +8,7 @@ import ImageIO
 class CameraManager: NSObject, ObservableObject {
     @Published var currentFrame: CVPixelBuffer?
     @Published var isRecording = false
-    @Published var visionOrientation: CGImagePropertyOrientation = .right
+    @Published var visionOrientation: CGImagePropertyOrientation = .up
     
     // Configurable state
     var isDebugModeEnabled: Bool = false
@@ -101,30 +101,12 @@ class CameraManager: NSObject, ObservableObject {
             }
         }
 
-        let exifOrientation = exifOrientation(
-            from: stableOrientation,
-            cameraPosition: currentCameraPosition
-        )
+        // We rotate capture output via AVCaptureConnection (videoOrientation /
+        // videoRotationAngle), so Vision should treat incoming pixel buffers as
+        // already-upright. Passing non-.up here can double-rotate in portrait.
+        let exifOrientation: CGImagePropertyOrientation = .up
         DispatchQueue.main.async {
             self.visionOrientation = exifOrientation
-        }
-    }
-
-    private func exifOrientation(
-        from deviceOrientation: UIDeviceOrientation,
-        cameraPosition: AVCaptureDevice.Position
-    ) -> CGImagePropertyOrientation {
-        switch deviceOrientation {
-        case .portraitUpsideDown:
-            return cameraPosition == .front ? .rightMirrored : .left
-        case .landscapeLeft:
-            return cameraPosition == .front ? .downMirrored : .up
-        case .landscapeRight:
-            return cameraPosition == .front ? .upMirrored : .down
-        case .portrait:
-            return cameraPosition == .front ? .leftMirrored : .right
-        default:
-            return cameraPosition == .front ? .leftMirrored : .right
         }
     }
     
