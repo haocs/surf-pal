@@ -3,10 +3,12 @@ import Vision
 import CoreImage
 import Combine
 import PhotosUI
+import ImageIO
 
 class CameraManager: NSObject, ObservableObject {
     @Published var currentFrame: CVPixelBuffer?
     @Published var isRecording = false
+    @Published var visionOrientation: CGImagePropertyOrientation = .right
     
     // Configurable state
     var isDebugModeEnabled: Bool = false
@@ -22,6 +24,7 @@ class CameraManager: NSObject, ObservableObject {
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
     private var currentCameraPosition: AVCaptureDevice.Position = .back
+    private var lastKnownOrientation: UIDeviceOrientation = .portrait
     
     // Recording state (Asset Writer)
     private var assetWriter: AVAssetWriter?
@@ -50,12 +53,21 @@ class CameraManager: NSObject, ObservableObject {
     
     private func updateVideoOrientation() {
         guard let connection = videoOutput.connection(with: .video) else { return }
-        let orientation = UIDevice.current.orientation
+        let deviceOrientation = UIDevice.current.orientation
+        let stableOrientation: UIDeviceOrientation
+
+        switch deviceOrientation {
+        case .portrait, .portraitUpsideDown, .landscapeLeft, .landscapeRight:
+            stableOrientation = deviceOrientation
+            lastKnownOrientation = deviceOrientation
+        default:
+            stableOrientation = lastKnownOrientation
+        }
         
         let videoOrientation: AVCaptureVideoOrientation
         let rotationAngle: CGFloat
         
-        switch orientation {
+        switch stableOrientation {
         case .portrait:
             videoOrientation = .portrait
             rotationAngle = 90
@@ -69,18 +81,50 @@ class CameraManager: NSObject, ObservableObject {
             videoOrientation = .landscapeLeft // Phone rotated right (side button down) -> Video Left
             rotationAngle = 180
         case .faceUp, .faceDown, .unknown:
-            return 
+            return
         @unknown default:
             return
         }
-        
-        if connection.isVideoOrientationSupported {
-            connection.videoOrientation = videoOrientation
-        }
+
         if #available(iOS 17.0, macOS 14.0, *) {
             if connection.isVideoRotationAngleSupported(rotationAngle) {
                 connection.videoRotationAngle = rotationAngle
             }
+        } else if connection.isVideoOrientationSupported {
+            connection.videoOrientation = videoOrientation
+        }
+
+        if #available(iOS 17.0, macOS 14.0, *) {
+            // Keep compatibility for APIs that still read videoOrientation.
+            if connection.isVideoOrientationSupported {
+                connection.videoOrientation = videoOrientation
+            }
+        }
+
+        let exifOrientation = exifOrientation(
+            from: stableOrientation,
+            cameraPosition: currentCameraPosition
+        )
+        DispatchQueue.main.async {
+            self.visionOrientation = exifOrientation
+        }
+    }
+
+    private func exifOrientation(
+        from deviceOrientation: UIDeviceOrientation,
+        cameraPosition: AVCaptureDevice.Position
+    ) -> CGImagePropertyOrientation {
+        switch deviceOrientation {
+        case .portraitUpsideDown:
+            return cameraPosition == .front ? .rightMirrored : .left
+        case .landscapeLeft:
+            return cameraPosition == .front ? .downMirrored : .up
+        case .landscapeRight:
+            return cameraPosition == .front ? .upMirrored : .down
+        case .portrait:
+            return cameraPosition == .front ? .leftMirrored : .right
+        default:
+            return cameraPosition == .front ? .leftMirrored : .right
         }
     }
     

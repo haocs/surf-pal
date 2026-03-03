@@ -1,6 +1,7 @@
 import Vision
 import CoreML
 import Combine
+import ImageIO
 
 struct BoundingBox: Identifiable {
     let id = UUID()
@@ -41,13 +42,20 @@ class Detector: ObservableObject {
         }
     }
     
-    func processFrame(_ pixelBuffer: CVPixelBuffer) {
+    func processFrame(
+        _ pixelBuffer: CVPixelBuffer,
+        orientation: CGImagePropertyOrientation = .up
+    ) {
         // Drop frames if we are currently busy inferring to avoid memory buildup
         guard !isProcessing, let request = self.request else { return }
         isProcessing = true
         
         processingQueue.async {
-            let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+            let handler = VNImageRequestHandler(
+                cvPixelBuffer: pixelBuffer,
+                orientation: orientation,
+                options: [:]
+            )
             do {
                 try handler.perform([request])
             } catch {
