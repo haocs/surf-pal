@@ -9,6 +9,7 @@ class VirtualCameraman: ObservableObject {
     // EMA smoothing factors
     private let alphaScale: CGFloat = 0.05
     private let alphaPan: CGFloat = 0.1
+    private let maxSmartZoom: CGFloat = 1.95
     
     // Current smoothed targets in normalized coordinates
     private var currentCx: CGFloat = 0.5
@@ -54,7 +55,7 @@ class VirtualCameraman: ObservableObject {
         }
         
         // Clamp total scale
-        let clampedScale = max(1.0, min(6.0, targetScale))
+        let clampedScale = max(1.0, min(maxSmartZoom, targetScale))
         
         // Apply EMA smoothing
         currentCx = (1 - alphaPan) * currentCx + alphaPan * targetCx

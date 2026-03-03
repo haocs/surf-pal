@@ -1,5 +1,12 @@
 import SwiftUI
 
+enum ZoomMode: String, CaseIterable, Identifiable {
+    case smartZoom = "SmartZoom"
+    case focusBox = "Focus Box"
+
+    var id: String { rawValue }
+}
+
 struct ContentView: View {
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var detector = Detector()
@@ -8,6 +15,7 @@ struct ContentView: View {
     
     @State private var isDebugMode = false
     @State private var lastLostEventID: UUID?
+    @State private var zoomMode: ZoomMode = .smartZoom
     
     var body: some View {
         GeometryReader { geometry in
@@ -87,6 +95,10 @@ struct ContentView: View {
                                                 }
                                             }
                                         }
+
+                                        if zoomMode == .focusBox, tracker.trackedBox != nil {
+                                            FocusGuideView(rect: focusGuideRect(screenSize: innerGeo.size))
+                                        }
                                     }
                                 }
                             )
@@ -100,8 +112,11 @@ struct ContentView: View {
                     }
                 }
                 // Apply the digital pan and zoom
-                .scaleEffect(virtualCameraman.scale)
-                .offset(x: virtualCameraman.offsetX, y: virtualCameraman.offsetY)
+                .scaleEffect(zoomMode == .smartZoom ? virtualCameraman.scale : 1.0)
+                .offset(
+                    x: zoomMode == .smartZoom ? virtualCameraman.offsetX : 0.0,
+                    y: zoomMode == .smartZoom ? virtualCameraman.offsetY : 0.0
+                )
                 
                 // 2. Static UI Controls Overlay
                 VStack {
@@ -121,6 +136,27 @@ struct ContentView: View {
                         .padding(10)
                         .background(Color.black.opacity(0.6))
                         .cornerRadius(12)
+
+                        HStack(spacing: 10) {
+                            Text("Zoom")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+
+                            Spacer()
+
+                            Picker("Zoom Mode", selection: $zoomMode) {
+                                ForEach(ZoomMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(.white)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(10)
 
                         if let lostMessage = tracker.lostEvent?.message {
                             Text(lostMessage)
@@ -163,12 +199,14 @@ struct ContentView: View {
                             if tracker.isTracking {
                                 Text("ID: \(tracker.trackID)")
                                 Text("MODE: \(tracker.mode.rawValue.uppercased())")
+                                Text("ZOOMMODE: \(zoomMode.rawValue.uppercased())")
                                 Text("ACT: \(tracker.currentActivity.rawValue.lowercased())")
                                 Text("SPD: \(String(format: "%.1f", tracker.classifierSignals.totalSpeed))")
                                 Text("HIST: \(tracker.classifierSignals.historyCount)")
                             } else {
                                 Text("STATUS: DETECTING")
                                 Text("MODE: \(tracker.mode.rawValue.uppercased())")
+                                Text("ZOOMMODE: \(zoomMode.rawValue.uppercased())")
                                 Text("COUNT: \(detector.detectedBoxes.count)")
                             }
                             Text("ZOOM: \(String(format: "%.2fx", virtualCameraman.scale))")
@@ -313,9 +351,31 @@ struct ContentView: View {
         .onAppear {
             cameraManager.start()
         }
-        .onDisappear {
+            .onDisappear {
             cameraManager.stop()
         }
+    }
+
+    private func focusGuideRect(screenSize: CGSize) -> CGRect {
+        let scale = max(1.0, min(virtualCameraman.scale, 1.95))
+        let safeScale = max(scale, 0.0001)
+
+        let width = max(1.0, screenSize.width / safeScale)
+        let height = max(1.0, screenSize.height / safeScale)
+
+        let cxNorm = 0.5 - (virtualCameraman.offsetX / (safeScale * max(screenSize.width, 1.0)))
+        let cyNorm = 0.5 - (virtualCameraman.offsetY / (safeScale * max(screenSize.height, 1.0)))
+
+        let clampedCx = min(1.0, max(0.0, cxNorm))
+        let clampedCy = min(1.0, max(0.0, cyNorm))
+
+        var x = clampedCx * screenSize.width - width / 2.0
+        var y = clampedCy * screenSize.height - height / 2.0
+
+        x = max(0.0, min(x, max(screenSize.width - width, 0.0)))
+        y = max(0.0, min(y, max(screenSize.height - height, 0.0)))
+
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 
@@ -376,5 +436,29 @@ struct BoundingBoxView: View {
         .onTapGesture {
             onTap?()
         }
+    }
+}
+
+struct FocusGuideView: View {
+    let rect: CGRect
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .stroke(Color.cyan, style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
+                .frame(width: rect.width, height: rect.height)
+
+            Text("Focus Box")
+                .font(.caption2)
+                .bold()
+                .foregroundColor(.black)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.cyan)
+                .offset(x: 0, y: -20)
+        }
+        .frame(width: rect.width, height: rect.height, alignment: .topLeading)
+        .position(x: rect.midX, y: rect.midY)
+        .allowsHitTesting(false)
     }
 }
