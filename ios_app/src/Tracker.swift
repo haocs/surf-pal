@@ -1,6 +1,7 @@
 import Vision
 import Combine
 import CoreGraphics
+import ImageIO
 
 // Re-using the BoundingBox from Detector.swift
 
@@ -153,7 +154,10 @@ class Tracker: ObservableObject {
         }
     }
 
-    func updateTracking(with pixelBuffer: CVPixelBuffer) {
+    func updateTracking(
+        with pixelBuffer: CVPixelBuffer,
+        orientation: CGImagePropertyOrientation = .up
+    ) {
         guard mode == .select else { return }
         guard let observation = lastObservation else { return }
 
@@ -185,7 +189,11 @@ class Tracker: ObservableObject {
         // request.trackingLevel = .accurate // .fast or .accurate
 
         do {
-            try sequenceRequestHandler.perform([request], on: pixelBuffer)
+            try sequenceRequestHandler.perform(
+                [request],
+                on: pixelBuffer,
+                orientation: orientation
+            )
         } catch {
             print("Tracking failed: \(error)")
             publishLostTracking(message: "Tracking lost. Tap surfer to reselect.")

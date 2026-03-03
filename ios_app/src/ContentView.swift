@@ -32,9 +32,15 @@ struct ContentView: View {
                                                 // Auto mode: run detector continuously and let Tracker
                                                 // lock onto the best candidate from detections.
                                                 if tracker.mode == .select && tracker.isTracking {
-                                                    tracker.updateTracking(with: newFrame)
+                                                    tracker.updateTracking(
+                                                        with: newFrame,
+                                                        orientation: cameraManager.visionOrientation
+                                                    )
                                                 } else {
-                                                    detector.processFrame(newFrame)
+                                                    detector.processFrame(
+                                                        newFrame,
+                                                        orientation: cameraManager.visionOrientation
+                                                    )
                                                 }
 
                                                 // UPDATE ZOOM CONTROLLER EVERY FRAME
