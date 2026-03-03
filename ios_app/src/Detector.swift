@@ -2,6 +2,7 @@ import Vision
 import CoreML
 import Combine
 import ImageIO
+import Foundation
 
 struct BoundingBox: Identifiable {
     let id = UUID()
@@ -20,25 +21,36 @@ class Detector: ObservableObject {
     init() {
         setupModel()
     }
+
+    private func failLoudly(_ message: String) -> Never {
+        fatalError("SurfPal Detector Fatal: \(message)")
+    }
     
     private func setupModel() {
+        // NOTE: yolov8n.mlpackage must be included in target resources.
+        let configuration = MLModelConfiguration()
+        configuration.computeUnits = .all
+
+        guard let modelURL = Bundle.main.url(forResource: "yolov8n", withExtension: "mlmodelc") else {
+            failLoudly(
+                "Missing required model 'yolov8n.mlmodelc' in app bundle. " +
+                "Ensure yolov8n.mlpackage is present in ios_app/Resources and target resources."
+            )
+        }
+
         do {
-            // NOTE: The user must add yolov8n.mlpackage to the Xcode target for this to load
-            let configuration = MLModelConfiguration()
-            configuration.computeUnits = .all
-            
-            // The generated model class will be named yolov8n
-            let yoloModel = try yolov8n(configuration: configuration)
-            self.visionModel = try VNCoreMLModel(for: yoloModel.model)
-            
-            self.request = VNCoreMLRequest(model: self.visionModel!) { [weak self] request, error in
+            let model = try MLModel(contentsOf: modelURL, configuration: configuration)
+            let visionModel = try VNCoreMLModel(for: model)
+            self.visionModel = visionModel
+
+            let request = VNCoreMLRequest(model: visionModel) { [weak self] request, error in
                 self?.processResults(request: request, error: error)
             }
             // YOLO requires images scaled appropriately. Vision handles this.
-            self.request?.imageCropAndScaleOption = .scaleFill
-            
+            request.imageCropAndScaleOption = .scaleFill
+            self.request = request
         } catch {
-            print("Failed to initialize Vision ML model: \(error)")
+            failLoudly("Failed to initialize Vision/CoreML model: \(error)")
         }
     }
     
@@ -47,7 +59,10 @@ class Detector: ObservableObject {
         orientation: CGImagePropertyOrientation = .up
     ) {
         // Drop frames if we are currently busy inferring to avoid memory buildup
-        guard !isProcessing, let request = self.request else { return }
+        guard !isProcessing else { return }
+        guard let request = self.request else {
+            failLoudly("Detector request is nil while processing frames.")
+        }
         isProcessing = true
         
         processingQueue.async {

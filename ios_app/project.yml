@@ -15,7 +15,6 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: src
-      - path: generated/yolov8n.swift
     resources:
       - path: Resources
     settings:

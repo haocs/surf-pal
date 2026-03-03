@@ -29,6 +29,13 @@ If the model is missing, generate it first from repo root:
 python3 models/export_coreml.py
 ```
 
+To explicitly link the model into app resources:
+
+```bash
+cd ios_app
+make sync-model
+```
+
 ## Build from terminal (optional)
 
 ```bash
@@ -46,5 +53,5 @@ make build-sim
 ## Important notes
 
 - Source files for the app target are under `ios_app/src/`.
-- `ios_app/generated/yolov8n.swift` is included automatically by `project.yml` and should stay in sync with the model package metadata.
+- `ios_app/generated/yolov8n.swift` is only for local terminal type-checking and is not included in the app target.
 - CoreML model packaging is managed via `ios_app/scripts/sync_model.sh`.
