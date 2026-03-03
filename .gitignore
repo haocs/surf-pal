@@ -10,3 +10,5 @@ output/
 tmp/
 !samples/
 !samples/*.mp4
+ios_app/SurfPal.xcodeproj/
+ios_app/Resources/yolov8n.mlpackage

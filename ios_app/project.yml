@@ -1,0 +1,47 @@
+name: SurfPal
+options:
+  createIntermediateGroups: true
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    IPHONEOS_DEPLOYMENT_TARGET: 16.0
+targets:
+  SurfPal:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: src
+      - path: generated/yolov8n.swift
+    resources:
+      - path: Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.surfpal.app
+        PRODUCT_NAME: SurfPal
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_NSCameraUsageDescription: "Surf-Pal needs access to the camera to track surfers."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Surf-Pal needs access to the photo library to save your tracking videos."
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+    preBuildScripts:
+      - name: Ensure CoreML Model Exists
+        script: |
+          MODEL_PATH="${SRCROOT}/Resources/yolov8n.mlpackage"
+          if [ ! -d "${MODEL_PATH}" ]; then
+            echo "error: Missing CoreML model at ${MODEL_PATH}"
+            echo "error: Run ./scripts/sync_model.sh (and generate with python3 models/export_coreml.py if needed)."
+            exit 1
+          fi
+scheme:
+  SurfPal:
+    build:
+      targets:
+        SurfPal: all
+    run:
+      config: Debug
+    archive:
+      config: Release

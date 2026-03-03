@@ -21,6 +21,7 @@ class Tracker: ObservableObject {
     @Published var mode: TrackingMode = .auto
     @Published var isTracking = false
     @Published var trackedBox: BoundingBox?
+    @Published var isReacquiringSelectedTarget = false
 
     // Debug info
     @Published var trackID: String = ""
@@ -35,6 +36,10 @@ class Tracker: ObservableObject {
 
     // Manual tracking settings
     private let manualMinConfidence: VNConfidence = 0.10
+    private let selectReacquireIouThreshold: CGFloat = 0.08
+    private let selectReacquireDistanceThreshold: CGFloat = 0.25
+    private var selectedTrackID: String?
+    private var selectedLastKnownRect: CGRect?
 
     // Auto mode settings
     private let autoLostFrameTolerance = 12
@@ -59,6 +64,7 @@ class Tracker: ObservableObject {
         runOnMain {
             self.autoLostFrames = 0
             self.isTracking = true
+            self.isReacquiringSelectedTarget = false
             if let forcedTrackID = forcedTrackID {
                 self.trackID = forcedTrackID
             } else if self.trackID.isEmpty {
@@ -66,6 +72,7 @@ class Tracker: ObservableObject {
             }
 
             self.trackedBox = BoundingBox(rect: rect, confidence: confidence)
+            self.selectedLastKnownRect = rect
             self.currentActivity = self.activityClassifier.update(targetRect: rect, frameSize: self.frameSize)
             self.classifierSignals = self.activityClassifier.signals
         }
@@ -73,11 +80,14 @@ class Tracker: ObservableObject {
 
     private func resetTrackingState() {
         isTracking = false
+        isReacquiringSelectedTarget = false
         trackedBox = nil
         trackID = ""
         lastObservation = nil
         sequenceRequestHandler = VNSequenceRequestHandler()
         autoLostFrames = 0
+        selectedTrackID = nil
+        selectedLastKnownRect = nil
         activityClassifier.reset()
         currentActivity = .unknown
         classifierSignals = activityClassifier.signals
@@ -108,6 +118,7 @@ class Tracker: ObservableObject {
     func startTracking(targetRect: CGRect, in pixelBuffer: CVPixelBuffer) {
         guard mode == .select else { return }
         let manualID = String(format: "ID:%04d", Int.random(in: 1000...9999))
+        selectedTrackID = manualID
 
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
@@ -122,7 +133,34 @@ class Tracker: ObservableObject {
 
         lastObservation = VNDetectedObjectObservation(boundingBox: visionRect)
         clearLostEvent()
+        activityClassifier.reset()
+        currentActivity = .unknown
+        classifierSignals = activityClassifier.signals
         publishTrackingUpdate(rect: targetRect, confidence: 1.0, forcedTrackID: manualID)
+    }
+
+    func attemptSelectReacquire(with detections: [BoundingBox], frameSize: CGSize) {
+        guard mode == .select else { return }
+        guard isReacquiringSelectedTarget else { return }
+        self.frameSize = frameSize
+
+        guard !detections.isEmpty else { return }
+        guard let candidate = selectReacquireCandidate(from: detections) else { return }
+
+        let visionRect = CGRect(
+            x: candidate.rect.origin.x,
+            y: 1 - candidate.rect.origin.y - candidate.rect.height,
+            width: candidate.rect.width,
+            height: candidate.rect.height
+        )
+        lastObservation = VNDetectedObjectObservation(boundingBox: visionRect)
+
+        clearLostEvent()
+        publishTrackingUpdate(
+            rect: candidate.rect,
+            confidence: candidate.confidence,
+            forcedTrackID: selectedTrackID ?? trackID
+        )
     }
 
     func updateAutoTracking(with detections: [BoundingBox], frameSize: CGSize) {
@@ -166,7 +204,7 @@ class Tracker: ObservableObject {
 
             if let result = request.results?.first as? VNDetectedObjectObservation {
                 if result.confidence < self.manualMinConfidence {
-                    self.publishLostTracking(message: "Tracking lost. Tap surfer to reselect.")
+                    self.beginSelectReacquire()
                     return
                 }
 
@@ -182,7 +220,7 @@ class Tracker: ObservableObject {
                 self.publishTrackingUpdate(rect: normalizedRect, confidence: result.confidence)
             } else {
                 // Tracking lost
-                self.publishLostTracking(message: "Tracking lost. Tap surfer to reselect.")
+                self.beginSelectReacquire()
             }
         }
 
@@ -196,7 +234,31 @@ class Tracker: ObservableObject {
             )
         } catch {
             print("Tracking failed: \(error)")
-            publishLostTracking(message: "Tracking lost. Tap surfer to reselect.")
+            beginSelectReacquire()
+        }
+    }
+
+    private func beginSelectReacquire() {
+        guard mode == .select else {
+            publishLostTracking(message: "Tracking lost.")
+            return
+        }
+        runOnMain {
+            if let currentRect = self.trackedBox?.rect {
+                self.selectedLastKnownRect = currentRect
+            }
+            self.isTracking = false
+            self.isReacquiringSelectedTarget = true
+            self.trackedBox = nil
+            self.lastObservation = nil
+            self.sequenceRequestHandler = VNSequenceRequestHandler()
+            self.activityClassifier.reset()
+            self.currentActivity = .unknown
+            self.classifierSignals = self.activityClassifier.signals
+            if self.trackID.isEmpty {
+                self.trackID = self.selectedTrackID ?? String(format: "ID:%04d", Int.random(in: 1000...9999))
+            }
+            self.lostEvent = LostTrackingEvent(message: "Tracking lost. Reacquiring selected surfer...")
         }
     }
 
@@ -241,6 +303,25 @@ class Tracker: ObservableObject {
             }
             .max(by: { $0.score < $1.score })?
             .box
+    }
+
+    private func selectReacquireCandidate(from detections: [BoundingBox]) -> BoundingBox? {
+        guard let lastRect = selectedLastKnownRect else {
+            return nil
+        }
+
+        let candidates = detections.compactMap { box -> (BoundingBox, CGFloat)? in
+            let overlap = iou(lastRect, box.rect)
+            let distance = normalizedCenterDistance(lastRect, box.rect)
+            let isNear = overlap >= selectReacquireIouThreshold || distance <= selectReacquireDistanceThreshold
+            guard isNear else { return nil }
+
+            let proximity = max(0.0, 1.0 - distance)
+            let score = (0.65 * overlap) + (0.25 * proximity) + (0.10 * CGFloat(box.confidence))
+            return (box, score)
+        }
+
+        return candidates.max(by: { $0.1 < $1.1 })?.0
     }
 
     private func iou(_ a: CGRect, _ b: CGRect) -> CGFloat {

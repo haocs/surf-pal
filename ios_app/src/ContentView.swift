@@ -68,16 +68,15 @@ struct ContentView: View {
                                                     BoundingBoxView(
                                                         normalizedRect: box.rect,
                                                         screenSize: innerGeo.size,
-                                                        color: .red,
-                                                        label: "Person (\(String(format: "%.2f", box.confidence)))"
-                                                    )
-                                                    .contentShape(Rectangle())
-                                                    .onTapGesture {
-                                                        // User selected a target to track
-                                                        if let currentFrame = cameraManager.currentFrame {
-                                                            tracker.startTracking(targetRect: box.rect, in: currentFrame)
+                                                        color: .orange,
+                                                        label: "Tap to Track (\(String(format: "%.2f", box.confidence)))",
+                                                        onTap: {
+                                                            // User selected a target to track
+                                                            if let currentFrame = cameraManager.currentFrame {
+                                                                tracker.startTracking(targetRect: box.rect, in: currentFrame)
+                                                            }
                                                         }
-                                                    }
+                                                    )
                                                 } else {
                                                     BoundingBoxView(
                                                         normalizedRect: box.rect,
@@ -132,7 +131,13 @@ struct ContentView: View {
                                 .cornerRadius(10)
                         }
 
-                        if tracker.mode == .select && !tracker.isTracking {
+                        if tracker.mode == .select && tracker.isReacquiringSelectedTarget {
+                            Text("Select mode: reacquiring selected surfer...")
+                                .padding()
+                                .background(Color.black.opacity(0.6))
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        } else if tracker.mode == .select && !tracker.isTracking {
                             Text("Select mode: tap a surfer to start tracking")
                                 .padding()
                                 .background(Color.black.opacity(0.6))
@@ -274,6 +279,14 @@ struct ContentView: View {
                         height: CGFloat(CVPixelBufferGetHeight(frame))
                     )
                     tracker.updateAutoTracking(with: newBoxes, frameSize: frameSize)
+                } else if tracker.mode == .select,
+                          tracker.isReacquiringSelectedTarget,
+                          let frame = cameraManager.currentFrame {
+                    let frameSize = CGSize(
+                        width: CGFloat(CVPixelBufferGetWidth(frame)),
+                        height: CGFloat(CVPixelBufferGetHeight(frame))
+                    )
+                    tracker.attemptSelectReacquire(with: newBoxes, frameSize: frameSize)
                 }
             }
             .onReceive(virtualCameraman.$scale) { newScale in
@@ -282,6 +295,13 @@ struct ContentView: View {
             .onReceive(tracker.$lostEvent) { event in
                 guard let event = event else { return }
                 lastLostEventID = event.id
+
+                // Keep the warning visible while select mode is actively
+                // attempting to reacquire the previously selected surfer.
+                if tracker.mode == .select && tracker.isReacquiringSelectedTarget {
+                    return
+                }
+
                 let currentID = event.id
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     if lastLostEventID == currentID {
@@ -323,6 +343,7 @@ struct BoundingBoxView: View {
     let screenSize: CGSize
     let color: Color
     let label: String
+    var onTap: (() -> Void)? = nil
     
     var body: some View {
         let absoluteFrame = CGRect(
@@ -331,20 +352,29 @@ struct BoundingBoxView: View {
             width: normalizedRect.width * screenSize.width,
             height: normalizedRect.height * screenSize.height
         )
-        
+
+        let w = max(absoluteFrame.width, 1.0)
+        let h = max(absoluteFrame.height, 1.0)
+
         ZStack(alignment: .topLeading) {
             Rectangle()
-                .path(in: absoluteFrame)
                 .stroke(color, lineWidth: 3.0)
-            
+                .frame(width: w, height: h)
+                .contentShape(Rectangle())
+
             Text(label)
                 .font(.caption)
                 .bold()
                 .foregroundColor(.white)
                 .padding(4)
                 .background(color)
-                .position(x: absoluteFrame.minX + (absoluteFrame.width / 2.0),
-                          y: absoluteFrame.minY - 10)
+                .offset(x: 0, y: -24)
+        }
+        .frame(width: w, height: h, alignment: .topLeading)
+        .position(x: absoluteFrame.midX, y: absoluteFrame.midY)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?()
         }
     }
 }
